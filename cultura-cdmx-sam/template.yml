@@ -1,0 +1,23 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Lambda with Playwright in a Docker container
+
+Resources:
+  PlaywrightLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Timeout: 60
+      MemorySize: 1024
+      EphemeralStorage:
+        Size: 1024 # MB
+      Architectures:
+        - x86_64
+    Tags:
+      Project: Cultura
+      Environment: Dev
+      Type: SingleRun
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./
+      DockerTag: playwright-lambda-v2
