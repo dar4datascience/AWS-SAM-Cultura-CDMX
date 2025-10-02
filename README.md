@@ -13,3 +13,5 @@ sam build
 sam deploy --config-file samconfig.yaml 
 
 ```
+
+PENDING ADDING MORE DEBUGGING TO INCREASE PARSING SPEED PER PAGE
