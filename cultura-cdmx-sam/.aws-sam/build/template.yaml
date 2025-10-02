@@ -6,7 +6,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       PackageType: Image
-      Timeout: 120
+      Timeout: 15
       MemorySize: 1536
       EphemeralStorage:
         Size: 1024
@@ -43,7 +43,7 @@ Resources:
     Properties:
       PackageType: Image
       Timeout: 180
-      MemorySize: 1536
+      MemorySize: 2048
       EphemeralStorage:
         Size: 1024
       Architectures:
