@@ -117,7 +117,7 @@ Resources:
           : {\n      \"Type\": \"Task\",\n      \"Resource\": \"${CulturaPageCheck.Arn}\"\
           ,\n      \"ResultPath\": \"$.pages\",\n      \"Next\": \"ScrapePagesMap\"\
           \n    },\n    \"ScrapePagesMap\": {\n      \"Type\": \"Map\",\n      \"\
-          ItemsPath\": \"$.pages.body.page_numbers\",\n      \"MaxConcurrency\": 20,\n\
+          ItemsPath\": \"$.pages.body.page_numbers\",\n      \"MaxConcurrency\": 10,\n\
           \      \"Iterator\": {\n        \"StartAt\": \"ScrapeSinglePage\",\n   \
           \     \"States\": {\n          \"ScrapeSinglePage\": {\n            \"Type\"\
           : \"Task\",\n            \"Resource\": \"${PlaywrightCardScrapper.Arn}\"\
