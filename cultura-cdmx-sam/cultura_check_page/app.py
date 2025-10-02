@@ -23,7 +23,7 @@ def scroll_to_bottom(page):
 
 
 def handler(event, context):
-    """AWS Lambda handler to detect the last page number on cartelera.cdmx.gob.mx."""
+    """AWS Lambda handler to detect the last page number on cartelera.cdmx.gob.mx and return the page array."""
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
@@ -52,7 +52,13 @@ def handler(event, context):
 
         browser.close()
 
+    # Create an array of page numbers from 1 to last_page
+    page_numbers = list(range(1, last_page + 1))
+
     return {
         "statusCode": 200,
-        "body": {"last_page": last_page}
+        "body": {
+            "last_page": last_page,
+            "page_numbers": page_numbers
+        }
     }
