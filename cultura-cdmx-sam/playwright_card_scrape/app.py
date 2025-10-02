@@ -180,7 +180,16 @@ async def run_scraper(page_number: int):
 
 def handler(event, context):
     """AWS Lambda handler."""
-    page_number = int(event.get("page_number", 1))
+    # Handle if event is a plain int (from Step Functions Map) or dict
+    if isinstance(event, int):
+        page_number = event
+    elif isinstance(event, str) and event.isdigit():
+        page_number = int(event)
+    elif isinstance(event, dict):
+        page_number = int(event.get("page_number", 1))
+    else:
+        page_number = 1
+
     bucket_name = os.environ.get("BUCKET_NAME")
     if not bucket_name:
         return {"statusCode": 500, "body": "Environment variable BUCKET_NAME not set."}
