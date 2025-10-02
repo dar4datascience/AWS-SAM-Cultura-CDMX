@@ -16,7 +16,8 @@ def handler(event, context):
         context = browser.new_context()
         page = context.new_page()
 
-        page.goto("https://cartelera.cdmx.gob.mx/busqueda")
+        page.goto("https://cartelera.cdmx.gob.mx/busqueda+" \
+        "")
         content = page.content()
 
         browser.close()
