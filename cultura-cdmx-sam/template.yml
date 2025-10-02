@@ -48,9 +48,9 @@ Resources:
     Properties:
       PackageType: Image
       Timeout: 60 # 60 seconds
-      MemorySize: 3008  # 3 GB for faster concurrent scraping
+      MemorySize: 3008  # For sequential scrapping
       EphemeralStorage:
-        Size: 1024
+        Size: 2048
       Architectures:
         - x86_64
       Environment:
