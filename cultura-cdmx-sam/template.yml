@@ -170,3 +170,37 @@ Resources:
                 Resource:
                   - !GetAtt CulturaPageCheck.Arn
                   - !GetAtt PlaywrightCardScrapper.Arn
+
+  # --------------------------
+  # EventBridge Rule: Daily Trigger
+  # --------------------------
+  CulturaScrapeScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: CulturaScrapeDailyRule
+      ScheduleExpression: "cron(0 12 * * ? *)"  # 12:00 UTC = 6:00 AM MX (standard time)
+      State: ENABLED
+      Targets:
+        - Arn: !Ref CulturaScrapeStateMachine
+          Id: CulturaScrapeStateMachineTarget
+          RoleArn: !GetAtt EventBridgeInvokeStepFnRole.Arn
+
+  EventBridgeInvokeStepFnRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AllowStartExecution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource: !Ref CulturaScrapeStateMachine
