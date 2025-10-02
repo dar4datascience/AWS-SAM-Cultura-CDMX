@@ -66,8 +66,6 @@ Resources:
       DockerTag: playwright-card-scraper-v1
       Dockerfile: Dockerfile
       SamResourceId: PlaywrightCardScrapper
-    ProvisionedConcurrencyConfig:
-      ProvisionedConcurrentExecutions: 2
   PlaywrightCardScrapperRole:
     Type: AWS::IAM::Role
     Properties:
