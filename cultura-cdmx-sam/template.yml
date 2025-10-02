@@ -48,7 +48,7 @@ Resources:
     Properties:
       PackageType: Image
       Timeout: 30 # 30 seconds
-      MemorySize: 3008  # 3 GB for faster concurrent scraping
+      MemorySize: 2048  # 2 GB for faster concurrent scraping
       EphemeralStorage:
         Size: 1024
       Architectures:
