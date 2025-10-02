@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Lambda with Playwright in a Docker container
+Description: Lambda with Playwright in a Docker container and Step Functions orchestration
 
 Resources:
 
@@ -11,10 +11,10 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       PackageType: Image
-      Timeout: 120                   # Increased timeout for slow page load
-      MemorySize: 1536               # Recommended for Chromium
+      Timeout: 120
+      MemorySize: 1536
       EphemeralStorage:
-        Size: 1024 # MB
+        Size: 1024
       Architectures:
         - x86_64
       Role: !GetAtt CulturaPageCheckRole.Arn
@@ -47,10 +47,10 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       PackageType: Image
-      Timeout: 180                   # Increased timeout for multiple cards
+      Timeout: 180
       MemorySize: 1536
       EphemeralStorage:
-        Size: 1024 # MB
+        Size: 1024
       Architectures:
         - x86_64
       Environment:
@@ -106,3 +106,64 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+
+  # --------------------------
+  # Step Functions State Machine
+  # --------------------------
+  CulturaScrapeStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      RoleArn: !GetAtt CulturaStateMachineRole.Arn
+      DefinitionString: !Sub |
+        {
+          "Comment": "Scrape all pages in parallel using Lambda Map",
+          "StartAt": "GetPageNumbers",
+          "States": {
+            "GetPageNumbers": {
+              "Type": "Task",
+              "Resource": "${CulturaPageCheck.Arn}",
+              "ResultPath": "$.pages",
+              "Next": "ScrapePagesMap"
+            },
+            "ScrapePagesMap": {
+              "Type": "Map",
+              "ItemsPath": "$.pages.body.page_numbers",
+              "MaxConcurrency": 5,
+              "Iterator": {
+                "StartAt": "ScrapeSinglePage",
+                "States": {
+                  "ScrapeSinglePage": {
+                    "Type": "Task",
+                    "Resource": "${PlaywrightCardScrapper.Arn}",
+                    "End": true
+                  }
+                }
+              },
+              "End": true
+            }
+          }
+        }
+
+  CulturaStateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSStepFunctionsFullAccess
+      Policies:
+        - PolicyName: LambdaInvoke
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt CulturaPageCheck.Arn
+                  - !GetAtt PlaywrightCardScrapper.Arn
