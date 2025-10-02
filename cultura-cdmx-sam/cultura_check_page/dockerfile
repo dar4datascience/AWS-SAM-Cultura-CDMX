@@ -11,10 +11,10 @@ ARG FUNCTION_DIR
 RUN mkdir -p ${FUNCTION_DIR}
 
 # Copy function code
-COPY cultura_lambdas/* ${FUNCTION_DIR}
+COPY cultura_check_page/* ${FUNCTION_DIR}
 
 # Install runtime interface client + matching Playwright version
-COPY cultura_lambdas/requirements.txt /tmp/requirements.txt
+COPY cultura_check_page/requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir \
     --target ${FUNCTION_DIR} \
     -r /tmp/requirements.txt || true
