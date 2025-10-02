@@ -10,6 +10,6 @@ AWS SAM Cultura CDMX
 ```bash
 sam build
 
-sam deploy --config-file samconfig.yaml --config-env development
+sam deploy --config-file samconfig.yaml 
 
 ```

@@ -1,0 +1,34 @@
+# Define function directory
+ARG FUNCTION_DIR="/function/"
+
+FROM mcr.microsoft.com/playwright/python:v1.54.0 as build-image
+
+RUN apt-get update && \
+    apt-get install -y \
+    g++ make cmake unzip libcurl4-openssl-dev
+
+ARG FUNCTION_DIR
+RUN mkdir -p ${FUNCTION_DIR}
+
+# Copy function code
+COPY playwright_card_scrape/* ${FUNCTION_DIR}
+
+# Install runtime interface client + matching Playwright version
+COPY playwright_card_scrape/requirements.txt /tmp/requirements.txt
+RUN pip3 install --no-cache-dir \
+    --target ${FUNCTION_DIR} \
+    -r /tmp/requirements.txt || true
+
+# Multi-stage build
+FROM mcr.microsoft.com/playwright/python:v1.54.0
+
+ARG FUNCTION_DIR
+WORKDIR ${FUNCTION_DIR}
+
+COPY --from=build-image ${FUNCTION_DIR} ${FUNCTION_DIR}
+
+# Install Chromium browser binaries (using module form since CLI isn't in PATH)
+RUN python -m playwright install --with-deps chromium
+
+ENTRYPOINT [ "/usr/bin/python", "-m", "awslambdaric" ]
+CMD [ "app.handler" ]

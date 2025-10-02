@@ -3,21 +3,106 @@ Transform: AWS::Serverless-2016-10-31
 Description: Lambda with Playwright in a Docker container
 
 Resources:
-  PlaywrightLambda:
+
+  # --------------------------
+  # Lambda: Check Last Page
+  # --------------------------
+  CulturaPageCheck:
     Type: AWS::Serverless::Function
     Properties:
       PackageType: Image
-      Timeout: 60
-      MemorySize: 1024
+      Timeout: 120                   # Increased timeout for slow page load
+      MemorySize: 1536               # Recommended for Chromium
       EphemeralStorage:
         Size: 1024 # MB
       Architectures:
         - x86_64
+      Role: !GetAtt CulturaPageCheckRole.Arn
     Tags:
       Project: Cultura
       Environment: Dev
       Type: SingleRun
     Metadata:
       Dockerfile: Dockerfile
-      DockerContext: ./
-      DockerTag: playwright-lambda-v2
+      DockerContext: ./cultura_check_page
+      DockerTag: playwright-pagecheck-v1
+
+  CulturaPageCheckRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # --------------------------
+  # Lambda: Scrape Cards
+  # --------------------------
+  PlaywrightCardScrapper:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Timeout: 180                   # Increased timeout for multiple cards
+      MemorySize: 1536
+      EphemeralStorage:
+        Size: 1024 # MB
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref CulturaBucket
+      Role: !GetAtt PlaywrightCardScrapperRole.Arn
+    Tags:
+      Project: Cultura
+      Environment: Dev
+      Type: MultiRun
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./playwright_card_scrape
+      DockerTag: playwright-card-scraper-v1
+
+  PlaywrightCardScrapperRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3WriteAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource: !Sub "${CulturaBucket.Arn}/*"
+
+  # --------------------------
+  # S3 Bucket
+  # --------------------------
+  CulturaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "cultura-events-${AWS::Region}-${AWS::AccountId}-${AWS::StackName}"
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldObjects
+            Status: Enabled
+            ExpirationInDays: 30
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
