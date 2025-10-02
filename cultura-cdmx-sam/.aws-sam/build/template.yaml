@@ -22,7 +22,7 @@ Resources:
       Environment: Dev
       Type: SingleRun
     Metadata:
-      DockerContext: /home/chonkydev/Documents/Github Repos/AWS-SAM-Cultura-CDMX/cultura-cdmx-sam/cultura_check_page
+      DockerContext: /home/rotundchonk/Documents/Github Repos/AWS-SAM-Cultura-CDMX/cultura-cdmx-sam/cultura_check_page
       DockerTag: playwright-pagecheck-v1
       Dockerfile: Dockerfile
       SamResourceId: CulturaPageCheck
@@ -62,7 +62,7 @@ Resources:
       Environment: Dev
       Type: MultiRun
     Metadata:
-      DockerContext: /home/chonkydev/Documents/Github Repos/AWS-SAM-Cultura-CDMX/cultura-cdmx-sam/playwright_card_scrape
+      DockerContext: /home/rotundchonk/Documents/Github Repos/AWS-SAM-Cultura-CDMX/cultura-cdmx-sam/playwright_card_scrape
       DockerTag: playwright-card-scraper-v1
       Dockerfile: Dockerfile
       SamResourceId: PlaywrightCardScrapper
