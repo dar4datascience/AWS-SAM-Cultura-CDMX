@@ -98,7 +98,7 @@ Resources:
   CulturaBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "cultura-events-${AWS::Region}-${AWS::AccountId}-${AWS::StackName}"
+      BucketName: !Sub "${AWS::StackName}-${AWS::Region}-${AWS::AccountId}"
       LifecycleConfiguration:
         Rules:
           - Id: ExpireOldObjects
