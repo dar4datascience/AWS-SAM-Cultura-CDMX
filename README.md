@@ -12,6 +12,12 @@ sam build
 
 sam deploy --config-file samconfig.yaml --resolve-image-repos
 
+aws lambda invoke \
+  --function-name cultura-cartelera-cdmx-PlaywrightCardScrapper-2CUqPBlSBXUq \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"page_number": 4}' \
+  response.json
+
 ```
 
 PENDING ADDING MORE DEBUGGING TO INCREASE PARSING SPEED PER PAGE
