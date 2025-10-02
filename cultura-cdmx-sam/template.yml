@@ -65,8 +65,6 @@ Resources:
       Dockerfile: Dockerfile
       DockerContext: ./playwright_card_scrape
       DockerTag: playwright-card-scraper-v1
-    ProvisionedConcurrencyConfig:
-      ProvisionedConcurrentExecutions: 2
 
 
   PlaywrightCardScrapperRole:
