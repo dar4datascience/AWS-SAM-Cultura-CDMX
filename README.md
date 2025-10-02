@@ -10,7 +10,7 @@ AWS SAM Cultura CDMX
 ```bash
 sam build
 
-sam deploy --config-file samconfig.yaml 
+sam deploy --config-file samconfig.yaml --resolve-image-repos
 
 ```
 

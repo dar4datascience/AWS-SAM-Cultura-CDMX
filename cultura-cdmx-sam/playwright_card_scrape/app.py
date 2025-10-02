@@ -32,7 +32,7 @@ async def scroll_to_bottom(page, distance=500, timeout_ms=1000):
 
 
 async def scrape_inner_page(page, retries=2):
-    """Scrape event details from inner page with retries."""
+    """Scrape event details (description, info, schedule, location, banner image) from inner page with retries."""
     for attempt in range(retries):
         try:
             data = await page.evaluate("""
@@ -40,35 +40,70 @@ async def scrape_inner_page(page, retries=2):
                     const wrapper = document.querySelector('.cdmx-billboard-generic-page-container');
                     if (!wrapper) return null;
                     const d = {};
+                    
+                    // Description
                     const desc = wrapper.querySelector('.cdmx-billboard-page-event-description-container');
                     d.description = desc ? Array.from(desc.querySelectorAll("p"), p => p.innerText.trim()).filter(Boolean) : null;
 
+                    // Info
                     const info = wrapper.querySelector('.cdmx-billboard-page-event-info-container');
                     if (info) {
                         const bordered = info.querySelector('.cdmx-billboard-page-event-info-container-bordered');
                         d.info = bordered ? Array.from(bordered.querySelectorAll("ul li"), li => li.innerText.trim()).filter(Boolean) : null;
-                    } else d.info = None;
+                    } else {
+                        d.info = null;
+                    }
 
+                    // Schedule
                     const sched = wrapper.querySelector('.cdmx-billboard-page-event-schedule-container');
                     d.schedule = sched ? {
-                        date: sched.querySelector('#cdmx-billboard-current-date-label')?.innerText.trim() || None,
-                        hour: sched.querySelector('#cdmx-billboard-current-hour-label')?.innerText.trim() || None
-                    } : None;
+                        date: sched.querySelector('#cdmx-billboard-current-date-label')?.innerText.trim() || null,
+                        hour: sched.querySelector('#cdmx-billboard-current-hour-label')?.innerText.trim() || null
+                    } : null;
 
+                    // Location
                     const loc = wrapper.querySelector('.cdmx-billboard-page-event-location-container');
-                    d.location = loc ? loc.querySelector("span")?.innerText.trim() : None;
+                    d.location = loc ? loc.querySelector("span")?.innerText.trim() : null;
+
+                    // Banner URL (from inline style)
+                    const banner = document.querySelector('.container-fluid.cdmx-billboard-page-event-banner-image');
+                    if (banner) {
+                        const style = banner.getAttribute("style") || "";
+                        const match = style.match(/url\\(['"]?(.*?)['"]?\\)/);
+                        d.banner_url = match ? match[1] : null;
+                    } else {
+                        d.banner_url = null;
+                    }
 
                     return d;
                 }
             """)
-            return data or {"description": None, "info": None, "schedule": None, "location": None}
+            return data or {
+                "description": None,
+                "info": None,
+                "schedule": None,
+                "location": None,
+                "banner_url": None
+            }
         except Exception as e:
             if "Execution context was destroyed" in str(e):
                 await asyncio.sleep(1)
                 continue
             print(f"Error scraping inner page: {e}")
-            return {"description": None, "info": None, "schedule": None, "location": None}
-    return {"description": None, "info": None, "schedule": None, "location": None}
+            return {
+                "description": None,
+                "info": None,
+                "schedule": None,
+                "location": None,
+                "banner_url": None
+            }
+    return {
+        "description": None,
+        "info": None,
+        "schedule": None,
+        "location": None,
+        "banner_url": None
+    }
 
 
 async def scrape_page_sequential(browser, page_number: int):
@@ -125,6 +160,10 @@ async def scrape_page_sequential(browser, page_number: int):
                 **data
             })
 
+            # ✅ Go back to results page and re-scroll
+            await page.go_back(wait_until="load")
+            await scroll_to_bottom(page)
+
         except PlaywrightTimeoutError:
             print(f"Timeout scraping card {i} on page {page_number}")
             results.append({
@@ -134,7 +173,8 @@ async def scrape_page_sequential(browser, page_number: int):
                 "description": None,
                 "info": None,
                 "schedule": None,
-                "location": None
+                "location": None,
+                "banner_url": None
             })
         except Exception as e:
             print(f"Failed to scrape card {i} on page {page_number}: {e}")
@@ -145,7 +185,8 @@ async def scrape_page_sequential(browser, page_number: int):
                 "description": None,
                 "info": None,
                 "schedule": None,
-                "location": None
+                "location": None,
+                "banner_url": None
             })
 
     await context.close()
