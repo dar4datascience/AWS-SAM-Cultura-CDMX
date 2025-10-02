@@ -18,7 +18,7 @@ Resources:
       Environment: Dev
       Type: SingleRun
     Metadata:
-      DockerContext: /home/rotundchonk/Documents/Github Repos/AWS-SAM-Cultura-CDMX/cultura-cdmx-sam
+      DockerContext: /home/chonkydev/Documents/Github Repos/AWS-SAM-Cultura-CDMX/cultura-cdmx-sam
       DockerTag: playwright-lambda-v2
       Dockerfile: Dockerfile
       SamResourceId: PlaywrightLambda

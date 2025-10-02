@@ -1,0 +1,12 @@
+default:
+  deploy:
+    parameters:
+      stack_name: cultura-cartelera-cdmx
+      resolve_s3: true
+      s3_prefix: cultura-cartelera-cdmx
+      region: mx-central-1
+      confirm_changeset: true
+      capabilities: CAPABILITY_IAM
+      image_repositories:
+      - PlaywrightLambda=829489762414.dkr.ecr.mx-central-1.amazonaws.com/culturacarteleracdmx6e12a291/playwrightlambda7e2d5b91repo
+version: 0.1
