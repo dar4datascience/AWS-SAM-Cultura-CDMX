@@ -3,3 +3,8 @@ project:
 
 
 
+format:
+  html:
+    theme: cyborg
+    css: styles.css
+    toc: true
