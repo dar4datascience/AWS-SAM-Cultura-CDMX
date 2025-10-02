@@ -45,7 +45,7 @@ Resources:
       Timeout: 60
       MemorySize: 3008
       EphemeralStorage:
-        Size: 2048
+        Size: 1024
       Architectures:
       - x86_64
       Environment:

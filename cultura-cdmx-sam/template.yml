@@ -50,7 +50,7 @@ Resources:
       Timeout: 60 # 60 seconds
       MemorySize: 3008  # For sequential scrapping
       EphemeralStorage:
-        Size: 2048
+        Size: 1024
       Architectures:
         - x86_64
       Environment:
