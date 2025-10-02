@@ -134,7 +134,7 @@ Resources:
             Service: states.amazonaws.com
           Action: sts:AssumeRole
       ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/service-role/AWSStepFunctionsFullAccess
+      - arn:aws:iam::aws:policy/AWSStepFunctionsFullAccess
       Policies:
       - PolicyName: LambdaInvoke
         PolicyDocument:
