@@ -47,8 +47,8 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       PackageType: Image
-      Timeout: 180
-      MemorySize: 2048        # more memory = more CPU = faster concurrent pages
+      Timeout: 300
+      MemorySize: 3072  # 3 GB for faster concurrent scraping
       EphemeralStorage:
         Size: 1024
       Architectures:
@@ -65,6 +65,8 @@ Resources:
       Dockerfile: Dockerfile
       DockerContext: ./playwright_card_scrape
       DockerTag: playwright-card-scraper-v1
+    ProvisionedConcurrencyConfig:
+      ProvisionedConcurrentExecutions: 2
 
 
   PlaywrightCardScrapperRole:
