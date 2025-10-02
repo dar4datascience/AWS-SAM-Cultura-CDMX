@@ -3,8 +3,9 @@ import json
 import os
 import boto3
 from datetime import datetime
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 
+# S3 client outside the handler for reuse
 s3 = boto3.client("s3")
 
 
@@ -71,12 +72,21 @@ async def scrape_inner_page(page, retries=2):
 
 
 async def scrape_page_sequential(browser, page_number: int):
-    """
-    Scrape all cards sequentially on a page using a single browser context.
-    Memory-safe for AWS Lambda.
-    """
+    """Scrape all cards sequentially on a page using a single browser context."""
     context = await browser.new_context()
-    page = await context.new_page()
+    results = []
+
+    # Retry opening page
+    for attempt in range(3):
+        try:
+            page = await context.new_page()
+            break
+        except Exception as e:
+            print(f"Retrying new_page due to: {e}")
+            await asyncio.sleep(1)
+    else:
+        raise RuntimeError("Failed to open a new page after 3 attempts")
+
     page.set_default_navigation_timeout(60_000)
 
     url = f"https://cartelera.cdmx.gob.mx/busqueda?tipo=ALL&pagina={page_number}"
@@ -87,11 +97,9 @@ async def scrape_page_sequential(browser, page_number: int):
         "#cdmx-billboard-tab-event-list .cdmx-billboard-event-result-list-item-container"
     ).count()
 
-    results = []
-
     for i in range(card_count):
         try:
-            # Scroll to card and click (same page)
+            # Scroll to card and click
             await page.evaluate(f"""
                 () => {{
                     const cards = document.querySelectorAll(
@@ -104,7 +112,7 @@ async def scrape_page_sequential(browser, page_number: int):
                 }}
             """)
 
-            # Wait for the detail container to appear
+            # Wait for the detail container
             await page.wait_for_selector(".cdmx-billboard-generic-page-container", timeout=30_000)
 
             # Extract inner page data
@@ -117,6 +125,17 @@ async def scrape_page_sequential(browser, page_number: int):
                 **data
             })
 
+        except PlaywrightTimeoutError:
+            print(f"Timeout scraping card {i} on page {page_number}")
+            results.append({
+                "page_number": page_number,
+                "card_index": i,
+                "detail_url": None,
+                "description": None,
+                "info": None,
+                "schedule": None,
+                "location": None
+            })
         except Exception as e:
             print(f"Failed to scrape card {i} on page {page_number}: {e}")
             results.append({
@@ -141,12 +160,21 @@ async def run_scraper(page_number: int):
             args=[
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
+                "--disable-gpu",
+                "--single-process",
+                "--disable-extensions",
+                "--disable-background-networking",
+                "--disable-background-timer-throttling",
+                "--disable-renderer-backgrounding",
+                "--disable-infobars",
                 "--disable-dev-shm-usage",
-                "--disable-gpu"
+                "--remote-debugging-port=9222"
             ]
         )
-        results = await scrape_page_sequential(browser, page_number)
-        await browser.close()
+        try:
+            results = await scrape_page_sequential(browser, page_number)
+        finally:
+            await browser.close()
         return results
 
 
@@ -157,7 +185,9 @@ def handler(event, context):
     if not bucket_name:
         return {"statusCode": 500, "body": "Environment variable BUCKET_NAME not set."}
 
-    results = asyncio.run(run_scraper(page_number))
+    # Use get_event_loop instead of asyncio.run()
+    loop = asyncio.get_event_loop()
+    results = loop.run_until_complete(run_scraper(page_number))
 
     snapshot_date = datetime.utcnow().strftime("%Y%m%d")
     s3_key = f"snapshot_date/{snapshot_date}/events_page_{page_number}_{datetime.utcnow().isoformat().replace(':','-')}.json"
