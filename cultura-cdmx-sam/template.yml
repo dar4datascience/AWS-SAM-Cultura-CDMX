@@ -47,8 +47,8 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       PackageType: Image
-      Timeout: 300
-      MemorySize: 3072  # 3 GB for faster concurrent scraping
+      Timeout: 30 # 30 seconds
+      MemorySize: 3008  # 3 GB for faster concurrent scraping
       EphemeralStorage:
         Size: 1024
       Architectures:
