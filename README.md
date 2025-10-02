@@ -1,11 +1,6 @@
 # AWS-SAM-Cultura-CDMX
-AWS SAM Cultura CDMX
 
-- bucket
-- lamba scrape inner
-- lamba open other lambas
-- lambda integrate result
-- lambda deliver data
+PENDING COALESCING DATA INTO SINGLE PARQUET TO DELVIER SOMEWHERE PUBLICLY TO ALLOW DUCKDB CONNECTION
 
 ```bash
 sam build
