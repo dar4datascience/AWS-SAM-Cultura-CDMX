@@ -10,14 +10,15 @@ RUN apt-get update && \
 ARG FUNCTION_DIR
 RUN mkdir -p ${FUNCTION_DIR}
 
-# Copy function code
-COPY cultura_check_page/* ${FUNCTION_DIR}
+# Assuming Dockerfile is inside cultura_check_page/
+COPY . ${FUNCTION_DIR}
 
-# Install runtime interface client + matching Playwright version
-COPY cultura_check_page/requirements.txt /tmp/requirements.txt
+# Copy requirements (optional)
+COPY requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir \
     --target ${FUNCTION_DIR} \
-    -r /tmp/requirements.txt || true
+    -r /tmp/requirements.txt
+
 
 # Multi-stage build
 FROM mcr.microsoft.com/playwright/python:v1.54.0
