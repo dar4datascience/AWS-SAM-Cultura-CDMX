@@ -79,10 +79,11 @@ async def scrape_inner_page(page, retries=3):
             return {"description": None, "info": None, "schedule": None, "location": None}
     return {"description": None, "info": None, "schedule": None, "location": None}
 
-async def scrape_card(context, page_number, card_index, sem, max_retries=3):
-    """Scrape a single card safely using a shared browser context with concurrency control."""
+async def scrape_card(browser, page_number, card_index, sem, max_retries=3):
+    """Scrape a single card safely using its own context."""
     async with sem:
         for attempt in range(1, max_retries + 1):
+            context = await browser.new_context()
             page = await context.new_page()
             page.set_default_navigation_timeout(60_000)
             try:
@@ -90,7 +91,6 @@ async def scrape_card(context, page_number, card_index, sem, max_retries=3):
                 await page.goto(url, wait_until="load", timeout=60_000)
                 await scroll_to_bottom(page)
 
-                # Click card
                 await page.evaluate(f"""
                     () => {{
                         const cards = document.querySelectorAll(
@@ -104,7 +104,6 @@ async def scrape_card(context, page_number, card_index, sem, max_retries=3):
                 """)
                 await page.wait_for_selector(".cdmx-billboard-generic-page-container", timeout=15_000)
 
-                # Scrape inner page
                 detail_data = await scrape_inner_page(page)
                 detail_data.update({
                     "page_number": page_number,
@@ -112,11 +111,11 @@ async def scrape_card(context, page_number, card_index, sem, max_retries=3):
                     "detail_url": page.url
                 })
 
-                await page.close()
+                await context.close()
                 return detail_data
 
             except Exception as e:
-                await page.close()
+                await context.close()
                 print(f"Attempt {attempt} failed for card {card_index} on page {page_number}: {e}")
                 if attempt < max_retries:
                     await asyncio.sleep(2)
@@ -132,24 +131,22 @@ async def scrape_card(context, page_number, card_index, sem, max_retries=3):
                     }
 
 async def scrape_page_cards(browser, page_number, max_concurrent=4):
-    """Scrape all cards concurrently with one browser and multiple contexts."""
+    """Scrape all cards concurrently using individual contexts per card."""
+    # Count cards first in a temporary context
     context = await browser.new_context()
     page = await context.new_page()
     page.set_default_navigation_timeout(120_000)
-
     url = f"https://cartelera.cdmx.gob.mx/busqueda?tipo=ALL&pagina={page_number}"
     await page.goto(url, wait_until="load")
     await scroll_to_bottom(page)
-
     card_count = await page.locator(
         "#cdmx-billboard-tab-event-list .cdmx-billboard-event-result-list-item-container"
     ).count()
-    await page.close()
+    await context.close()
 
     sem = asyncio.Semaphore(max_concurrent)
-    tasks = [scrape_card(context, page_number, i, sem) for i in range(card_count)]
+    tasks = [scrape_card(browser, page_number, i, sem) for i in range(card_count)]
     results = await asyncio.gather(*tasks)
-    await context.close()
     return results
 
 async def run_scraper(page_number: int, max_concurrent=4):
