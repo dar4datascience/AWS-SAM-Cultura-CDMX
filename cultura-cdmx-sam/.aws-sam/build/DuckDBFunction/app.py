@@ -6,6 +6,8 @@ from urllib.parse import urlparse
 
 s3 = boto3.client("s3")
 bucket_name = os.getenv("BUCKET_NAME")
+os.environ["DUCKDB_HOME"] = "/tmp"
+os.environ["DUCKDB_TMPDIR"] = "/tmp"
 
 def lambda_handler(event, context):
     """
@@ -32,13 +34,19 @@ def lambda_handler(event, context):
     output_path = f"s3://{bucket_name}/{output_key}"
 
     # Register S3 for DuckDB (needs boto3 credentials in Lambda runtime)
-    con = duckdb.connect()
-    con.execute("INSTALL httpfs; LOAD httpfs;")
-    con.execute("SET s3_region='{}'".format(os.getenv("AWS_REGION", "mx-central-1")))
-    con.execute("SET s3_access_key_id='{}'".format(os.getenv("AWS_ACCESS_KEY_ID", "")))
-    con.execute("SET s3_secret_access_key='{}'".format(os.getenv("AWS_SECRET_ACCESS_KEY", "")))
-    if os.getenv("AWS_SESSION_TOKEN"):
-        con.execute("SET s3_session_token='{}'".format(os.getenv("AWS_SESSION_TOKEN")))
+    con = duckdb.connect(database=":memory:")
+    con.execute("SET home_directory= '/tmp';")
+    con.install_extension("aws")
+    con.install_extension("httpfs")
+    con.load_extension("aws")
+    con.load_extension("httpfs")
+    
+    con.sql("""
+            CREATE SECRET (
+                TYPE S3, 
+                PROVIDER CREDENTIAL_CHAIN
+            );
+    """)
 
     # Read all JSON files into DuckDB and write a single Parquet
     try:
