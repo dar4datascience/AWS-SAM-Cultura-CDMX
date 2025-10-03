@@ -14,6 +14,12 @@ aws lambda invoke \
   --payload '{"page_number": 4}' \
   response.json
 
+aws lambda invoke \
+  --function-name cultura-cartelera-cdmx-DuckDBFunction-1paMbykWXdlb \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"snapshot_date": "20251002"}' \
+  response.json
+
 ```
 
 PENDING ADDING MORE DEBUGGING TO INCREASE PARSING SPEED PER PAGE
