@@ -26,7 +26,7 @@ def lambda_handler(event, context):
         }
 
     prefix = f"snapshot_date/{snapshot_date}/"
-    output_key = f"database/{snapshot_date}.parquet"
+    output_key = f"database/scraped_data_{snapshot_date}.parquet"
 
     # Construct S3 path DuckDB can read directly
     input_path = f"s3://{bucket_name}/{prefix}*.json"

@@ -129,7 +129,7 @@ Resources:
             "ScrapePagesMap": {
               "Type": "Map",
               "ItemsPath": "$.pages.body.page_numbers",
-              "MaxConcurrency": 10,
+              "MaxConcurrency": 5,
               "Iterator": {
                 "StartAt": "ScrapeSinglePage",
                 "States": {
