@@ -145,6 +145,40 @@ Resources:
           }
         }
 
+  # --------------------------
+  # Lambda Layer: DuckDB
+  # --------------------------
+  DuckDBLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: duckdb-layer
+      Description: "Lambda layer providing duckdb Python library"
+      ContentUri: ./layers/duckdb   # folder with requirements.txt
+      CompatibleRuntimes:
+        - python3.11
+        - python3.12
+      RetentionPolicy: Retain
+
+  # --------------------------
+  # Lambda: DuckDB Example
+  # --------------------------
+  DuckDBFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./duckdb_handler
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      Timeout: 30
+      MemorySize: 1024
+      Layers:
+        - !Ref DuckDBLayer
+      Policies:
+        - AWSLambdaBasicExecutionRole
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref CulturaBucket
+
+
   CulturaStateMachineRole:
     Type: AWS::IAM::Role
     Properties:
