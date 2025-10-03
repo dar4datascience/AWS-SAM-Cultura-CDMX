@@ -4,7 +4,6 @@ import boto3
 import os
 from urllib.parse import urlparse
 
-s3 = boto3.client("s3")
 bucket_name = os.getenv("BUCKET_NAME")
 os.environ["DUCKDB_HOME"] = "/tmp"
 os.environ["DUCKDB_TMPDIR"] = "/tmp"
@@ -40,13 +39,14 @@ def lambda_handler(event, context):
     con.install_extension("httpfs")
     con.load_extension("aws")
     con.load_extension("httpfs")
-    
+    s3 = boto3.client("s3")
     con.sql("""
             CREATE SECRET (
                 TYPE S3, 
                 PROVIDER CREDENTIAL_CHAIN
             );
     """)
+
 
     # Read all JSON files into DuckDB and write a single Parquet
     try:
