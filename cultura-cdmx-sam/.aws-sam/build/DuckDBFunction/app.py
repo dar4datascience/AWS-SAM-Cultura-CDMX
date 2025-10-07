@@ -1,11 +1,14 @@
+import os
 import json
+import gzip
+import base64
+from urllib.parse import urlparse
+
 import duckdb
 import boto3
-import os
-from urllib.parse import urlparse
-import base64
-import requests
 from botocore.exceptions import ClientError
+import requests
+
 
 bucket_name = os.getenv("BUCKET_NAME")
 print(f"[DEBUG] BUCKET_NAME: {bucket_name}")
@@ -32,22 +35,28 @@ def get_secret(secret_arn: str) -> str:
         print(f"[ERROR] Failed to retrieve secret: {e}")
         raise RuntimeError(f"Failed to retrieve GitHub secret: {e}")
 
+
 def upload_to_github(file_path, repo_owner, repo_name, target_path, commit_message, github_token):
     print(f"[DEBUG] Uploading {file_path} to GitHub repo {repo_owner}/{repo_name} at {target_path}")
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{target_path}"
 
+    # Compress the file before encoding
     with open(file_path, "rb") as f:
-        encoded_content = base64.b64encode(f.read()).decode("utf-8")
+        gz_content = gzip.compress(f.read())
+
+    encoded_content = base64.b64encode(gz_content).decode("utf-8")
 
     headers = {
         "Authorization": f"Bearer {github_token}",
         "Accept": "application/vnd.github+json",
     }
+
     payload = {
         "message": commit_message,
         "content": encoded_content
     }
 
+    # Check if file already exists to get SHA
     response = requests.get(api_url, headers=headers)
     if response.status_code == 200:
         sha = response.json().get("sha")
@@ -56,8 +65,8 @@ def upload_to_github(file_path, repo_owner, repo_name, target_path, commit_messa
     else:
         print(f"[DEBUG] File does not exist in repo, creating new file")
 
+    # Upload the file
     response = requests.put(api_url, headers=headers, data=json.dumps(payload))
-
     if response.status_code not in (200, 201):
         print(f"[ERROR] GitHub upload failed: {response.status_code} - {response.text}")
         raise Exception(f"GitHub upload failed: {response.status_code} - {response.text}")
