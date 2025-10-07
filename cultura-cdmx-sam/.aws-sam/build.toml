@@ -9,20 +9,20 @@ manifest_hash = ""
 packagetype = "Zip"
 functions = ["DuckDBFunction"]
 
-[function_build_definitions.bfb8780d-0e23-4f96-9a88-e12bbd792dc1]
+[function_build_definitions.92cc19ef-ea5b-4aad-97de-1c2538704c05]
 packagetype = "Image"
 functions = ["CulturaPageCheck"]
 
-[function_build_definitions.bfb8780d-0e23-4f96-9a88-e12bbd792dc1.metadata]
+[function_build_definitions.92cc19ef-ea5b-4aad-97de-1c2538704c05.metadata]
 Dockerfile = "Dockerfile"
 DockerContext = "/home/chonkydev/Documents/Github Repos/AWS-SAM-Cultura-CDMX/cultura-cdmx-sam/cultura_check_page"
 DockerTag = "playwright-pagecheck-v1"
 
-[function_build_definitions.b90b9c20-f487-4cc9-ad98-f33967351991]
+[function_build_definitions.68913c02-b534-40c8-aca6-3ab1f0013606]
 packagetype = "Image"
 functions = ["PlaywrightCardScrapper"]
 
-[function_build_definitions.b90b9c20-f487-4cc9-ad98-f33967351991.metadata]
+[function_build_definitions.68913c02-b534-40c8-aca6-3ab1f0013606.metadata]
 Dockerfile = "Dockerfile"
 DockerContext = "/home/chonkydev/Documents/Github Repos/AWS-SAM-Cultura-CDMX/cultura-cdmx-sam/playwright_card_scrape"
 DockerTag = "playwright-card-scraper-v1"

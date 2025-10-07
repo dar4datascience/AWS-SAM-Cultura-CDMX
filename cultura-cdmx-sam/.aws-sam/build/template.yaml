@@ -182,15 +182,15 @@ Resources:
           ,\n  \"States\": {\n    \"GenerateSnapshotDate\": {\n      \"Type\": \"\
           Pass\",\n      \"Comment\": \"Generate a UTC snapshot_date in YYYYMMDD format\"\
           ,\n      \"ResultPath\": \"$.snapshot_date\",\n      \"Parameters\": {\n\
-          \        \"snapshot_date.$\": \"States.Format('{}', States.Format('yyyyMMdd',\
-          \ $$.Execution.StartTime))\"\n      },\n      \"Next\": \"GetPageNumbers\"\
-          \n    },\n    \"GetPageNumbers\": {\n      \"Type\": \"Task\",\n      \"\
-          Resource\": \"${CulturaPageCheck.Arn}\",\n      \"ResultPath\": \"$.pages\"\
-          ,\n      \"Next\": \"ScrapePagesMap\"\n    },\n    \"ScrapePagesMap\": {\n\
-          \      \"Type\": \"Map\",\n      \"ItemsPath\": \"$.pages.body.page_numbers\"\
-          ,\n      \"MaxConcurrency\": 5,\n      \"Parameters\": {\n        \"page_number.$\"\
-          : \"$$.Map.Item.Value\",\n        \"snapshot_date.$\": \"$.snapshot_date.snapshot_date\"\
-          \n      },\n      \"Iterator\": {\n        \"StartAt\": \"ScrapeSinglePage\"\
+          \        \"snapshot_date.$\": \"States.Format('yyyyMMdd', $$.Execution.StartTime)\"\
+          \n      },\n      \"Next\": \"GetPageNumbers\"\n    },\n    \"GetPageNumbers\"\
+          : {\n      \"Type\": \"Task\",\n      \"Resource\": \"${CulturaPageCheck.Arn}\"\
+          ,\n      \"ResultPath\": \"$.pages\",\n      \"Next\": \"ScrapePagesMap\"\
+          \n    },\n    \"ScrapePagesMap\": {\n      \"Type\": \"Map\",\n      \"\
+          ItemsPath\": \"$.pages.body.page_numbers\",\n      \"MaxConcurrency\": 5,\n\
+          \      \"Parameters\": {\n        \"page_number.$\": \"$$.Map.Item.Value\"\
+          ,\n        \"snapshot_date.$\": \"$.snapshot_date.snapshot_date\"\n    \
+          \  },\n      \"Iterator\": {\n        \"StartAt\": \"ScrapeSinglePage\"\
           ,\n        \"States\": {\n          \"ScrapeSinglePage\": {\n          \
           \  \"Type\": \"Task\",\n            \"Resource\": \"${PlaywrightCardScrapper.Arn}\"\
           ,\n            \"End\": true\n          }\n        }\n      },\n      \"\
