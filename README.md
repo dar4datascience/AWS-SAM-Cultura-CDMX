@@ -1,8 +1,5 @@
 # AWS-SAM-Cultura-CDMX
 
-PENDING COALESCING DATA INTO SINGLE PARQUET TO DELVIER SOMEWHERE PUBLICLY TO ALLOW DUCKDB CONNECTION
-one last step? using glue or lambda? whats the total size of the folder?
-
 ```bash
 sam build
 
