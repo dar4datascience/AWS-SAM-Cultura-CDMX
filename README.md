@@ -1,5 +1,7 @@
 # AWS-SAM-Cultura-CDMX
 
+- Missing title of the event
+
 ```bash
 sam build
 
