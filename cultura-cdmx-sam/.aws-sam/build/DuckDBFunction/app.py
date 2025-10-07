@@ -115,7 +115,7 @@ def lambda_handler(event, context):
             "body": json.dumps({"error": str(e)})
         }
 
-    local_path = f"/tmp/scraped_data_{snapshot_date}.parquet"
+    local_path = f"/tmp/scraped_data_cultura_cartelera_cdmx.parquet"
     print(f"[DEBUG] Downloading Parquet to local path: {local_path}")
     s3_client.download_file(bucket_name, output_key, local_path)
     print("[DEBUG] Download completed")
