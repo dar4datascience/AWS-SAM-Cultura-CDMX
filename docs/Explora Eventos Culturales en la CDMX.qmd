@@ -3,49 +3,113 @@ title: "Explora Eventos Culturales en la CDMX"
 format: 
   html:
     toc: true
-    code-tools: true
+    code-tools: false
+    code-fold: false
+
+execute:
+  echo: false
+  message: false
+  warning: false
+  cache: false
 ---
 
+# Explora Eventos Culturales
+
 ```{r reactable}
-library(reactable)
-library(dplyr)
 library(arrow)
+library(dplyr)
+library(janitor)
+library(R.utils) # for gunzip
+library(reactable)
 
-cartelera_cultural_cdmx <- read_parquet("http://github.com/dar4datascience/AWS-SAM-Cultura-CDMX/blob/main/data/scraped_data_cultura_cartelera_cdmx.parquet") |>
+# Raw URL of gzip-compressed parquet on GitHub
+raw_gz_url <- "https://raw.githubusercontent.com/dar4datascience/AWS-SAM-Cultura-CDMX/main/data/scraped_data_cultura_cartelera_cdmx.parquet"
+
+# Download gzip file
+tmp_gz <- tempfile(fileext = ".parquet.gz")
+download.file(raw_gz_url, tmp_gz, mode = "wb")
+
+# Decompress gzip to Parquet
+tmp_parquet <- tempfile(fileext = ".parquet")
+R.utils::gunzip(tmp_gz, destname = tmp_parquet, overwrite = TRUE)
+
+# Read Parquet into a tibble
+cartelera_cultural_cdmx <- arrow::read_parquet(tmp_parquet) |>
   janitor::clean_names()
+
+# Now you can use dplyr and reactable
 ```
 
-```r
-    reactable(
-      theme = fivethirtyeight(centered = TRUE),
-      selection = "single",
-      onClick = "select",
-      striped = TRUE,
-      pagination = TRUE,
-      searchable = TRUE,
-      defaultColDef = colDef(align = 'center'),
-      columns = list(
-        poster = colDef(
-          name = 'Poster',
-          maxWidth = 200,
-          cell = embed_img(movies_found$poster,
-                           height = 200,
-                           width = 235,
-                           horizontal_align = 'center')
-        ),
-        titulo_disponible = colDef(maxWidth = 150, name = 'Pelicula'),
-        year = colDef(maxWidth = 50,
-                      name = 'Released'),
-        plot = colDef(minWidth = 150,
-                      name = 'Trama'),
-        genre = colDef(minWidth = 100,
-                       name = "Generos")
-      )
+```{r createtable}
+library(reactable)
+library(reactablefmtr)
+library(dplyr)
+library(purrr)
+
+# Prepare the dataframe for reactable
+df_reactable <- cartelera_cultural_cdmx |>
+  mutate(
+    # Collapse list columns into single strings
+    info_text = map_chr(info, ~ paste(.x, collapse = "<br>"))
+  ) |>
+  distinct(
+    banner_url,
+    info_text,
+    location,
+    detail_url
+  )
+
+# Reactable
+reactable(
+  df_reactable,
+  theme = fivethirtyeight(centered = TRUE),
+  selection = "single",
+  onClick = "select",
+  striped = TRUE,
+  pagination = TRUE,
+  searchable = TRUE,
+  defaultColDef = colDef(align = "center"),
+  columns = list(
+    banner_url = colDef(
+      name = "Poster",
+      maxWidth = 200,
+      html = TRUE,
+      cell = function(value, index) {
+        url <- df_reactable$detail_url[index]
+        if (!is.na(value) && nzchar(value)) {
+          sprintf(
+            '<a href="%s" target="_blank"><img src="%s" height="200" width="235"></a>',
+            url, value
+          )
+        } else {
+          ""
+        }
+      }
+    ),
+    info_text = colDef(
+      name = "Info",
+      minWidth = 200,
+      html = TRUE # allow <br> line breaks
+    ),
+    location = colDef(
+      name = "Location",
+      minWidth = 200
+    ),
+    detail_url = colDef(
+      name = "Detail Url",
+      minWidth = 200,
+      html = TRUE,
+      cell = function(value) {
+        if (!is.na(value) && nzchar(value)) {
+          sprintf('<a href="%s" target="_blank">Ver Detalles</a>', value)
+        } else {
+          ""
+        }
+      }
     )
+  )
+)
 ```
-
-
-
 
 # Old Artifacts
 
