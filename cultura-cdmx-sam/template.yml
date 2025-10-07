@@ -1,0 +1,324 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Lambda with Playwright in a Docker container and Step Functions orchestration
+
+Resources:
+
+  # --------------------------
+  # Lambda: Check Last Page
+  # --------------------------
+  CulturaPageCheck:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Timeout: 15
+      MemorySize: 1536
+      EphemeralStorage:
+        Size: 1024
+      Architectures:
+        - x86_64
+      Role: !GetAtt CulturaPageCheckRole.Arn
+    Tags:
+      Project: Cultura
+      Environment: Dev
+      Type: SingleRun
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./cultura_check_page
+      DockerTag: playwright-pagecheck-v1
+
+  CulturaPageCheckRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # --------------------------
+  # Lambda: Scrape Cards
+  # --------------------------
+  PlaywrightCardScrapper:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Timeout: 120 # 120 seconds
+      MemorySize: 3008  # For sequential scrapping
+      EphemeralStorage:
+        Size: 1024
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref CulturaBucket
+      Role: !GetAtt PlaywrightCardScrapperRole.Arn
+    Tags:
+      Project: Cultura
+      Environment: Dev
+      Type: MultiRun
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./playwright_card_scrape
+      DockerTag: playwright-card-scraper-v1
+
+
+  PlaywrightCardScrapperRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3WriteAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource: !Sub "${CulturaBucket.Arn}/*"
+
+  # --------------------------
+  # S3 Bucket
+  # --------------------------
+  CulturaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-${AWS::Region}-${AWS::AccountId}"
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldObjects
+            Status: Enabled
+            ExpirationInDays: 30
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # --------------------------
+  # Lambda Layer: DuckDB
+  # --------------------------
+  DuckDBLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: duckdb-layer
+      Description: "Lambda layer providing duckdb Python library"
+      ContentUri: ./layers/duckdb   # folder with requirements.txt
+      CompatibleRuntimes:
+        - python3.11
+        - python3.12
+      RetentionPolicy: Retain
+
+  DuckDBFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3ReadWriteAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Allow reading JSON input files
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt CulturaBucket.Arn
+                  - !Sub "${CulturaBucket.Arn}/*"
+              # Allow writing Parquet output files
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource: !Sub "${CulturaBucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: "*"
+
+
+
+  # --------------------------
+  # Lambda: DuckDB Coalesce
+  # --------------------------
+  DuckDBFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./duckdb_handler
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      Timeout: 30
+      MemorySize: 1024
+      Role: !GetAtt DuckDBFunctionRole.Arn
+      Layers:
+        - !Ref DuckDBLayer
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref CulturaBucket
+          GITHUB_OWNER: "dar4datascience"
+          GITHUB_REPO: "AWS-SAM-Cultura-CDMX"
+          GITHUB_SECRET_ARN: "arn:aws:secretsmanager:mx-central-1:829489762414:secret:github-scoped-token-zXl6yW"
+          
+  GenerateSnapshotDateLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./generate_snapshot_date
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      Timeout: 10
+      MemorySize: 128
+      Role: !GetAtt GenerateSnapshotDateRole.Arn
+
+  GenerateSnapshotDateRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # --------------------------
+  # Step Functions State Machine
+  # --------------------------
+  CulturaScrapeStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      RoleArn: !GetAtt CulturaStateMachineRole.Arn
+      DefinitionString: !Sub |
+        {
+          "Comment": "Scrape all pages in parallel using Lambda Map, then merge outputs with DuckDB",
+          "StartAt": "GenerateSnapshotDate",
+          "States": {
+            "GenerateSnapshotDate": {
+              "Type": "Task",
+              "Resource": "${GenerateSnapshotDateLambda.Arn}",
+              "ResultPath": "$.snapshot_date",
+              "Next": "GetPageNumbers"
+            },
+            "GetPageNumbers": {
+              "Type": "Task",
+              "Resource": "${CulturaPageCheck.Arn}",
+              "ResultPath": "$.pages",
+              "Next": "ScrapePagesMap"
+            },
+            "ScrapePagesMap": {
+              "Type": "Map",
+              "ItemsPath": "$.pages.body.page_numbers",
+              "MaxConcurrency": 5,
+              "Parameters": {
+                "page_number.$": "$$.Map.Item.Value",
+                "snapshot_date.$": "$.snapshot_date.snapshot_date"
+              },
+              "Iterator": {
+                "StartAt": "ScrapeSinglePage",
+                "States": {
+                  "ScrapeSinglePage": {
+                    "Type": "Task",
+                    "Resource": "${PlaywrightCardScrapper.Arn}",
+                    "End": true
+                  }
+                }
+              },
+              "ResultPath": "$.scrape_results",
+              "Next": "DuckDBStep"
+            },
+            "DuckDBStep": {
+              "Type": "Task",
+              "Comment": "Merge JSONs into Parquet using DuckDB",
+              "Resource": "${DuckDBFunction.Arn}",
+              "Parameters": {
+                "snapshot_date.$": "$.snapshot_date"
+              },
+              "End": true
+            }
+          }
+        }
+
+
+  CulturaStateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSStepFunctionsFullAccess
+      Policies:
+        - PolicyName: LambdaInvoke
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt CulturaPageCheck.Arn
+                  - !GetAtt PlaywrightCardScrapper.Arn
+                  - !GetAtt GenerateSnapshotDateLambda.Arn
+                  - !GetAtt DuckDBFunction.Arn 
+
+
+  # --------------------------
+  # EventBridge Rule: Daily Trigger
+  # --------------------------
+  CulturaScrapeScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: CulturaScrapeDailyRule
+      ScheduleExpression: "cron(0 12 ? * 2-6 *)"  # 12:00 UTC = 6:00 AM MX, Monday to Friday
+      State: ENABLED
+      Targets:
+        - Arn: !Ref CulturaScrapeStateMachine
+          Id: CulturaScrapeStateMachineTarget
+          RoleArn: !GetAtt EventBridgeInvokeStepFnRole.Arn
+
+  EventBridgeInvokeStepFnRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AllowStartExecution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource: !Ref CulturaScrapeStateMachine
