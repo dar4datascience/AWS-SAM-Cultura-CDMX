@@ -264,7 +264,7 @@ Resources:
     Type: AWS::Events::Rule
     Properties:
       Name: CulturaScrapeDailyRule
-      ScheduleExpression: cron(0 12 * * ? *)
+      ScheduleExpression: cron(0 12 ? * 2-6 *)
       State: ENABLED
       Targets:
       - Arn:
