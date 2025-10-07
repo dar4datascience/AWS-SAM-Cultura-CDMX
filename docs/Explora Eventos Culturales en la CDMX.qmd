@@ -9,8 +9,10 @@ format:
 ```{r reactable}
 library(reactable)
 library(dplyr)
+library(arrow)
 
-#cartelera_cultural_cdmx <- 
+cartelera_cultural_cdmx <- read_parquet("http://github.com/dar4datascience/AWS-SAM-Cultura-CDMX/blob/main/data/scraped_data_cultura_cartelera_cdmx.parquet") |>
+  janitor::clean_names()
 ```
 
 ```r
