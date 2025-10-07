@@ -22,7 +22,7 @@ Resources:
       Environment: Dev
       Type: SingleRun
     Metadata:
-      DockerContext: /home/rotundchonk/Documents/Github Repos/AWS-SAM-Cultura-CDMX/cultura-cdmx-sam/cultura_check_page
+      DockerContext: /home/chonkydev/Documents/Github Repos/AWS-SAM-Cultura-CDMX/cultura-cdmx-sam/cultura_check_page
       DockerTag: playwright-pagecheck-v1
       Dockerfile: Dockerfile
       SamResourceId: CulturaPageCheck
@@ -62,7 +62,7 @@ Resources:
       Environment: Dev
       Type: MultiRun
     Metadata:
-      DockerContext: /home/rotundchonk/Documents/Github Repos/AWS-SAM-Cultura-CDMX/cultura-cdmx-sam/playwright_card_scrape
+      DockerContext: /home/chonkydev/Documents/Github Repos/AWS-SAM-Cultura-CDMX/cultura-cdmx-sam/playwright_card_scrape
       DockerTag: playwright-card-scraper-v1
       Dockerfile: Dockerfile
       SamResourceId: PlaywrightCardScrapper
@@ -104,25 +104,6 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-  CulturaScrapeStateMachine:
-    Type: AWS::StepFunctions::StateMachine
-    Properties:
-      RoleArn:
-        Fn::GetAtt:
-        - CulturaStateMachineRole
-        - Arn
-      DefinitionString:
-        Fn::Sub: "{\n  \"Comment\": \"Scrape all pages in parallel using Lambda Map\"\
-          ,\n  \"StartAt\": \"GetPageNumbers\",\n  \"States\": {\n    \"GetPageNumbers\"\
-          : {\n      \"Type\": \"Task\",\n      \"Resource\": \"${CulturaPageCheck.Arn}\"\
-          ,\n      \"ResultPath\": \"$.pages\",\n      \"Next\": \"ScrapePagesMap\"\
-          \n    },\n    \"ScrapePagesMap\": {\n      \"Type\": \"Map\",\n      \"\
-          ItemsPath\": \"$.pages.body.page_numbers\",\n      \"MaxConcurrency\": 10,\n\
-          \      \"Iterator\": {\n        \"StartAt\": \"ScrapeSinglePage\",\n   \
-          \     \"States\": {\n          \"ScrapeSinglePage\": {\n            \"Type\"\
-          : \"Task\",\n            \"Resource\": \"${PlaywrightCardScrapper.Arn}\"\
-          ,\n            \"End\": true\n          }\n        }\n      },\n      \"\
-          End\": true\n    }\n  }\n}\n"
   DuckDBLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
@@ -183,8 +164,41 @@ Resources:
         Variables:
           BUCKET_NAME:
             Ref: CulturaBucket
+          GITHUB_OWNER: dar4datascience
+          GITHUB_REPO: AWS-SAM-Cultura-CDMX
+          GITHUB_SECRET_ARN: arn:aws:secretsmanager:mx-central-1:829489762414:secret:github-scoped-token-zXl6yW
     Metadata:
       SamResourceId: DuckDBFunction
+  CulturaScrapeStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      RoleArn:
+        Fn::GetAtt:
+        - CulturaStateMachineRole
+        - Arn
+      DefinitionString:
+        Fn::Sub: "{\n  \"Comment\": \"Scrape all pages in parallel using Lambda Map,\
+          \ then merge outputs with DuckDB\",\n  \"StartAt\": \"GenerateSnapshotDate\"\
+          ,\n  \"States\": {\n    \"GenerateSnapshotDate\": {\n      \"Type\": \"\
+          Pass\",\n      \"Comment\": \"Generate a UTC snapshot_date in YYYYMMDD format\"\
+          ,\n      \"ResultPath\": \"$.snapshot_date\",\n      \"Parameters\": {\n\
+          \        \"snapshot_date.$\": \"States.Format('{}', States.Format('yyyyMMdd',\
+          \ $$.Execution.StartTime))\"\n      },\n      \"Next\": \"GetPageNumbers\"\
+          \n    },\n    \"GetPageNumbers\": {\n      \"Type\": \"Task\",\n      \"\
+          Resource\": \"${CulturaPageCheck.Arn}\",\n      \"ResultPath\": \"$.pages\"\
+          ,\n      \"Next\": \"ScrapePagesMap\"\n    },\n    \"ScrapePagesMap\": {\n\
+          \      \"Type\": \"Map\",\n      \"ItemsPath\": \"$.pages.body.page_numbers\"\
+          ,\n      \"MaxConcurrency\": 5,\n      \"Parameters\": {\n        \"page_number.$\"\
+          : \"$$.Map.Item.Value\",\n        \"snapshot_date.$\": \"$.snapshot_date.snapshot_date\"\
+          \n      },\n      \"Iterator\": {\n        \"StartAt\": \"ScrapeSinglePage\"\
+          ,\n        \"States\": {\n          \"ScrapeSinglePage\": {\n          \
+          \  \"Type\": \"Task\",\n            \"Resource\": \"${PlaywrightCardScrapper.Arn}\"\
+          ,\n            \"End\": true\n          }\n        }\n      },\n      \"\
+          Next\": \"DuckDBStep\"\n    },\n    \"DuckDBStep\": {\n      \"Type\": \"\
+          Task\",\n      \"Comment\": \"Merge JSONs into Parquet using DuckDB\",\n\
+          \      \"Resource\": \"${DuckDBFunction.Arn}\",\n      \"Parameters\": {\n\
+          \        \"snapshot_date.$\": \"$.snapshot_date.snapshot_date\"\n      },\n\
+          \      \"End\": true\n    }\n  }\n}\n"
   CulturaStateMachineRole:
     Type: AWS::IAM::Role
     Properties:
