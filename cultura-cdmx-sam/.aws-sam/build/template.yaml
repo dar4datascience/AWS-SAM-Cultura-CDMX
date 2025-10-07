@@ -146,6 +146,10 @@ Resources:
             - s3:PutObjectAcl
             Resource:
               Fn::Sub: ${CulturaBucket.Arn}/*
+          - Effect: Allow
+            Action:
+            - secretsmanager:GetSecretValue
+            Resource: '*'
   DuckDBFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -169,6 +173,32 @@ Resources:
           GITHUB_SECRET_ARN: arn:aws:secretsmanager:mx-central-1:829489762414:secret:github-scoped-token-zXl6yW
     Metadata:
       SamResourceId: DuckDBFunction
+  GenerateSnapshotDateLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: GenerateSnapshotDateLambda
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      Timeout: 10
+      MemorySize: 128
+      Role:
+        Fn::GetAtt:
+        - GenerateSnapshotDateRole
+        - Arn
+    Metadata:
+      SamResourceId: GenerateSnapshotDateLambda
+  GenerateSnapshotDateRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
   CulturaScrapeStateMachine:
     Type: AWS::StepFunctions::StateMachine
     Properties:
@@ -180,25 +210,23 @@ Resources:
         Fn::Sub: "{\n  \"Comment\": \"Scrape all pages in parallel using Lambda Map,\
           \ then merge outputs with DuckDB\",\n  \"StartAt\": \"GenerateSnapshotDate\"\
           ,\n  \"States\": {\n    \"GenerateSnapshotDate\": {\n      \"Type\": \"\
-          Pass\",\n      \"Comment\": \"Generate a UTC snapshot_date in YYYYMMDD format\"\
-          ,\n      \"ResultPath\": \"$.snapshot_date\",\n      \"Parameters\": {\n\
-          \        \"snapshot_date.$\": \"States.Format('yyyyMMdd', $$.Execution.StartTime)\"\
-          \n      },\n      \"Next\": \"GetPageNumbers\"\n    },\n    \"GetPageNumbers\"\
-          : {\n      \"Type\": \"Task\",\n      \"Resource\": \"${CulturaPageCheck.Arn}\"\
-          ,\n      \"ResultPath\": \"$.pages\",\n      \"Next\": \"ScrapePagesMap\"\
-          \n    },\n    \"ScrapePagesMap\": {\n      \"Type\": \"Map\",\n      \"\
-          ItemsPath\": \"$.pages.body.page_numbers\",\n      \"MaxConcurrency\": 5,\n\
-          \      \"Parameters\": {\n        \"page_number.$\": \"$$.Map.Item.Value\"\
-          ,\n        \"snapshot_date.$\": \"$.snapshot_date.snapshot_date\"\n    \
-          \  },\n      \"Iterator\": {\n        \"StartAt\": \"ScrapeSinglePage\"\
+          Task\",\n      \"Resource\": \"${GenerateSnapshotDateLambda.Arn}\",\n  \
+          \    \"ResultPath\": \"$.snapshot_date\",\n      \"Next\": \"GetPageNumbers\"\
+          \n    },\n    \"GetPageNumbers\": {\n      \"Type\": \"Task\",\n      \"\
+          Resource\": \"${CulturaPageCheck.Arn}\",\n      \"ResultPath\": \"$.pages\"\
+          ,\n      \"Next\": \"ScrapePagesMap\"\n    },\n    \"ScrapePagesMap\": {\n\
+          \      \"Type\": \"Map\",\n      \"ItemsPath\": \"$.pages.body.page_numbers\"\
+          ,\n      \"MaxConcurrency\": 5,\n      \"Parameters\": {\n        \"page_number.$\"\
+          : \"$$.Map.Item.Value\",\n        \"snapshot_date.$\": \"$.snapshot_date.snapshot_date\"\
+          \n      },\n      \"Iterator\": {\n        \"StartAt\": \"ScrapeSinglePage\"\
           ,\n        \"States\": {\n          \"ScrapeSinglePage\": {\n          \
           \  \"Type\": \"Task\",\n            \"Resource\": \"${PlaywrightCardScrapper.Arn}\"\
           ,\n            \"End\": true\n          }\n        }\n      },\n      \"\
-          Next\": \"DuckDBStep\"\n    },\n    \"DuckDBStep\": {\n      \"Type\": \"\
-          Task\",\n      \"Comment\": \"Merge JSONs into Parquet using DuckDB\",\n\
-          \      \"Resource\": \"${DuckDBFunction.Arn}\",\n      \"Parameters\": {\n\
-          \        \"snapshot_date.$\": \"$.snapshot_date.snapshot_date\"\n      },\n\
-          \      \"End\": true\n    }\n  }\n}\n"
+          ResultPath\": \"$.scrape_results\",\n      \"Next\": \"DuckDBStep\"\n  \
+          \  },\n    \"DuckDBStep\": {\n      \"Type\": \"Task\",\n      \"Comment\"\
+          : \"Merge JSONs into Parquet using DuckDB\",\n      \"Resource\": \"${DuckDBFunction.Arn}\"\
+          ,\n      \"Parameters\": {\n        \"snapshot_date.$\": \"$.snapshot_date\"\
+          \n      },\n      \"End\": true\n    }\n  }\n}\n"
   CulturaStateMachineRole:
     Type: AWS::IAM::Role
     Properties:
@@ -225,6 +253,12 @@ Resources:
               - Arn
             - Fn::GetAtt:
               - PlaywrightCardScrapper
+              - Arn
+            - Fn::GetAtt:
+              - GenerateSnapshotDateLambda
+              - Arn
+            - Fn::GetAtt:
+              - DuckDBFunction
               - Arn
   CulturaScrapeScheduleRule:
     Type: AWS::Events::Rule
