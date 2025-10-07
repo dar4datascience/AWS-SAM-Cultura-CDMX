@@ -192,7 +192,7 @@ Resources:
               "Comment": "Generate a UTC snapshot_date in YYYYMMDD format",
               "ResultPath": "$.snapshot_date",
               "Parameters": {
-                "snapshot_date.$": "States.Format('{}', States.Format('yyyyMMdd', $$.Execution.StartTime))"
+                "snapshot_date.$": "States.Format('yyyyMMdd', $$.Execution.StartTime)"
               },
               "Next": "GetPageNumbers"
             },
