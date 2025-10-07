@@ -47,7 +47,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       PackageType: Image
-      Timeout: 60 # 60 seconds
+      Timeout: 120 # 120 seconds
       MemorySize: 3008  # For sequential scrapping
       EphemeralStorage:
         Size: 1024
