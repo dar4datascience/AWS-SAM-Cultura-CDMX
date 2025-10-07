@@ -109,43 +109,6 @@ Resources:
         RestrictPublicBuckets: true
 
   # --------------------------
-  # Step Functions State Machine
-  # --------------------------
-  CulturaScrapeStateMachine:
-    Type: AWS::StepFunctions::StateMachine
-    Properties:
-      RoleArn: !GetAtt CulturaStateMachineRole.Arn
-      DefinitionString: !Sub |
-        {
-          "Comment": "Scrape all pages in parallel using Lambda Map",
-          "StartAt": "GetPageNumbers",
-          "States": {
-            "GetPageNumbers": {
-              "Type": "Task",
-              "Resource": "${CulturaPageCheck.Arn}",
-              "ResultPath": "$.pages",
-              "Next": "ScrapePagesMap"
-            },
-            "ScrapePagesMap": {
-              "Type": "Map",
-              "ItemsPath": "$.pages.body.page_numbers",
-              "MaxConcurrency": 5,
-              "Iterator": {
-                "StartAt": "ScrapeSinglePage",
-                "States": {
-                  "ScrapeSinglePage": {
-                    "Type": "Task",
-                    "Resource": "${PlaywrightCardScrapper.Arn}",
-                    "End": true
-                  }
-                }
-              },
-              "End": true
-            }
-          }
-        }
-
-  # --------------------------
   # Lambda Layer: DuckDB
   # --------------------------
   DuckDBLayer:
@@ -193,7 +156,7 @@ Resources:
 
 
   # --------------------------
-  # Lambda: DuckDB Example
+  # Lambda: DuckDB Coalesce
   # --------------------------
   DuckDBFunction:
     Type: AWS::Serverless::Function
@@ -209,6 +172,67 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref CulturaBucket
+          GITHUB_OWNER: "dar4datascience"
+          GITHUB_REPO: "AWS-SAM-Cultura-CDMX"
+          GITHUB_SECRET_ARN: "arn:aws:secretsmanager:mx-central-1:829489762414:secret:github-scoped-token-zXl6yW"
+  # --------------------------
+  # Step Functions State Machine
+  # --------------------------
+  CulturaScrapeStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      RoleArn: !GetAtt CulturaStateMachineRole.Arn
+      DefinitionString: !Sub |
+        {
+          "Comment": "Scrape all pages in parallel using Lambda Map, then merge outputs with DuckDB",
+          "StartAt": "GenerateSnapshotDate",
+          "States": {
+            "GenerateSnapshotDate": {
+              "Type": "Pass",
+              "Comment": "Generate a UTC snapshot_date in YYYYMMDD format",
+              "ResultPath": "$.snapshot_date",
+              "Parameters": {
+                "snapshot_date.$": "States.Format('{}', States.Format('yyyyMMdd', $$.Execution.StartTime))"
+              },
+              "Next": "GetPageNumbers"
+            },
+            "GetPageNumbers": {
+              "Type": "Task",
+              "Resource": "${CulturaPageCheck.Arn}",
+              "ResultPath": "$.pages",
+              "Next": "ScrapePagesMap"
+            },
+            "ScrapePagesMap": {
+              "Type": "Map",
+              "ItemsPath": "$.pages.body.page_numbers",
+              "MaxConcurrency": 5,
+              "Parameters": {
+                "page_number.$": "$$.Map.Item.Value",
+                "snapshot_date.$": "$.snapshot_date.snapshot_date"
+              },
+              "Iterator": {
+                "StartAt": "ScrapeSinglePage",
+                "States": {
+                  "ScrapeSinglePage": {
+                    "Type": "Task",
+                    "Resource": "${PlaywrightCardScrapper.Arn}",
+                    "End": true
+                  }
+                }
+              },
+              "Next": "DuckDBStep"
+            },
+            "DuckDBStep": {
+              "Type": "Task",
+              "Comment": "Merge JSONs into Parquet using DuckDB",
+              "Resource": "${DuckDBFunction.Arn}",
+              "Parameters": {
+                "snapshot_date.$": "$.snapshot_date.snapshot_date"
+              },
+              "End": true
+            }
+          }
+        }
 
 
   CulturaStateMachineRole:

@@ -239,8 +239,8 @@ def handler(event, context):
     loop = asyncio.get_event_loop()
     results = loop.run_until_complete(run_scraper(page_number))
 
-    snapshot_date = datetime.utcnow().strftime("%Y%m%d")
-    s3_key = f"snapshot_date/{snapshot_date}/events_page_{page_number}_{datetime.utcnow().isoformat().replace(':','-')}.json"
+    snapshot_date = event.get("snapshot_date")
+    s3_key = f"snapshot_date/{snapshot_date}/events_page_{page_number}.json"
 
     s3.put_object(
         Bucket=bucket_name,
