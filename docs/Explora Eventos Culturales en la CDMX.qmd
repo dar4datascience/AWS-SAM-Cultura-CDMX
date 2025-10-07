@@ -41,6 +41,8 @@ cartelera_cultural_cdmx <- arrow::read_parquet(tmp_parquet) |>
 ```
 
 ```{r createtable}
+#| column: page
+
 library(reactable)
 library(reactablefmtr)
 library(dplyr)

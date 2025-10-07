@@ -1,6 +1,7 @@
 # AWS-SAM-Cultura-CDMX
 
 - Missing title of the event
+- make quarto full page
 
 ```bash
 sam build
