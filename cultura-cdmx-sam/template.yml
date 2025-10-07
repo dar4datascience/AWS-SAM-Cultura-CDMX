@@ -153,6 +153,11 @@ Resources:
                   - s3:PutObject
                   - s3:PutObjectAcl
                 Resource: !Sub "${CulturaBucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: "*"
+
 
 
   # --------------------------
@@ -175,6 +180,30 @@ Resources:
           GITHUB_OWNER: "dar4datascience"
           GITHUB_REPO: "AWS-SAM-Cultura-CDMX"
           GITHUB_SECRET_ARN: "arn:aws:secretsmanager:mx-central-1:829489762414:secret:github-scoped-token-zXl6yW"
+          
+  GenerateSnapshotDateLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./generate_snapshot_date
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      Timeout: 10
+      MemorySize: 128
+      Role: !GetAtt GenerateSnapshotDateRole.Arn
+
+  GenerateSnapshotDateRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
   # --------------------------
   # Step Functions State Machine
   # --------------------------
@@ -188,12 +217,9 @@ Resources:
           "StartAt": "GenerateSnapshotDate",
           "States": {
             "GenerateSnapshotDate": {
-              "Type": "Pass",
-              "Comment": "Generate a UTC snapshot_date in YYYYMMDD format",
+              "Type": "Task",
+              "Resource": "${GenerateSnapshotDateLambda.Arn}",
               "ResultPath": "$.snapshot_date",
-              "Parameters": {
-                "snapshot_date.$": "States.Format('yyyyMMdd', $$.Execution.StartTime)"
-              },
               "Next": "GetPageNumbers"
             },
             "GetPageNumbers": {
@@ -220,6 +246,7 @@ Resources:
                   }
                 }
               },
+              "ResultPath": "$.scrape_results",
               "Next": "DuckDBStep"
             },
             "DuckDBStep": {
@@ -227,7 +254,7 @@ Resources:
               "Comment": "Merge JSONs into Parquet using DuckDB",
               "Resource": "${DuckDBFunction.Arn}",
               "Parameters": {
-                "snapshot_date.$": "$.snapshot_date.snapshot_date"
+                "snapshot_date.$": "$.snapshot_date"
               },
               "End": true
             }
@@ -258,6 +285,9 @@ Resources:
                 Resource:
                   - !GetAtt CulturaPageCheck.Arn
                   - !GetAtt PlaywrightCardScrapper.Arn
+                  - !GetAtt GenerateSnapshotDateLambda.Arn
+                  - !GetAtt DuckDBFunction.Arn 
+
 
   # --------------------------
   # EventBridge Rule: Daily Trigger
