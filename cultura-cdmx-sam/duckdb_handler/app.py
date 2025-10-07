@@ -122,7 +122,7 @@ def lambda_handler(event, context):
 
     repo_owner = os.getenv("GITHUB_OWNER")
     repo_name = os.getenv("GITHUB_REPO")
-    target_path = f"data/scraped_data_{snapshot_date}.parquet"
+    target_path = f"data/scraped_data_cultura_cartelera_cdmx.parquet"
     commit_message = f"Add scraped parquet for {snapshot_date}"
     secret_arn = os.getenv("GITHUB_SECRET_ARN")
     if not secret_arn:
