@@ -2,9 +2,50 @@
 title: "Explora Eventos Culturales en la CDMX"
 format: 
   html:
-    toc: false
+    toc: true
     code-tools: true
 ---
+
+```{r reactable}
+library(reactable)
+library(dplyr)
+
+#cartelera_cultural_cdmx <- 
+```
+
+```r
+    reactable(
+      theme = fivethirtyeight(centered = TRUE),
+      selection = "single",
+      onClick = "select",
+      striped = TRUE,
+      pagination = TRUE,
+      searchable = TRUE,
+      defaultColDef = colDef(align = 'center'),
+      columns = list(
+        poster = colDef(
+          name = 'Poster',
+          maxWidth = 200,
+          cell = embed_img(movies_found$poster,
+                           height = 200,
+                           width = 235,
+                           horizontal_align = 'center')
+        ),
+        titulo_disponible = colDef(maxWidth = 150, name = 'Pelicula'),
+        year = colDef(maxWidth = 50,
+                      name = 'Released'),
+        plot = colDef(minWidth = 150,
+                      name = 'Trama'),
+        genre = colDef(minWidth = 100,
+                       name = "Generos")
+      )
+    )
+```
+
+
+
+
+# Old Artifacts
 
 Demonstration of using the [GitHub API](https://developer.github.com/v3). 
 
