@@ -17,7 +17,7 @@ execute:
 # Explora Eventos Culturales
 
 ```{r reactable}
-library(arrow)
+library(duckdb)
 library(dplyr)
 library(janitor)
 library(R.utils) # for gunzip
@@ -37,9 +37,17 @@ tmp_parquet <- tempfile(fileext = ".parquet")
 R.utils::gunzip(tmp_gz, destname = tmp_parquet, overwrite = TRUE)
 
 # Read Parquet into a tibble
-cartelera_cultural_cdmx <- arrow::read_parquet(tmp_parquet) |>
+
+library(duckdb)
+library(dbplyr)
+con <- dbConnect(duckdb())
+
+# Read Parquet into a tibble
+cartelera_cultural_cdmx <- tbl(con, tmp_parquet) |>
+  collect() |> 
   janitor::clean_names()
 
+saveRDS(cartelera_cultural_cdmx, "cartelera_cultura_cdmx.RData")
 # Now you can use dplyr and reactable
 ```
 
@@ -81,84 +89,75 @@ tagList(
 
 
 ```{r}
-build_cultura_tbl <- function(df) {
-  reactable(
-    df,
-    theme = minty(centered = TRUE),
-    selection = "multiple",
-    onClick = "select",
-    striped = TRUE,
-    pagination = TRUE,
-    searchable = TRUE,
-    defaultColDef = colDef(align = "center"),
-    columns = list(
-      banner_url = colDef(
-        name = "Poster",
-        maxWidth = 200,
-        html = TRUE,
-        cell = function(value, index) {
-          url <- df_reactable$detail_url[index]
-          if (!is.na(value) && nzchar(value)) {
-            sprintf(
-              '<a href="%s" target="_blank"><img src="%s" height="200" width="235"></a>',
-              url, value
-            )
-          } else {
-            ""
-          }
+reactable(
+  df_reactable,
+  theme = minty(centered = TRUE),
+  selection = "multiple",
+  onClick = "select",
+  striped = TRUE,
+  pagination = TRUE,
+  searchable = TRUE,
+  defaultColDef = colDef(align = "center"),
+  columns = list(
+    banner_url = colDef(
+      name = "Poster",
+      maxWidth = 200,
+      html = TRUE,
+      cell = function(value, index) {
+        url <- df_reactable$detail_url[index]
+        if (!is.na(value) && nzchar(value)) {
+          sprintf(
+            '<a href="%s" target="_blank"><img src="%s" height="200" width="235"></a>',
+            url, value
+          )
+        } else {
+          ""
         }
-      ),
-      evento = colDef(
-        name = "Evento",
-        minWidth = 200
-      ),
-      recinto = colDef(
-        name = "Recinto",
-        minWidth = 200
-      ),
-      info_text = colDef(
-        name = "Info",
-        minWidth = 200,
-        html = TRUE # allow <br> line breaks
-      ),
-      location = colDef(
-        name = "Location",
-        minWidth = 200
-      ),
-      detail_url = colDef(
-        name = "Detail Url",
-        minWidth = 200,
-        html = TRUE,
-        cell = function(value) {
-          if (!is.na(value) && nzchar(value)) {
-            sprintf('<a href="%s" target="_blank">Ver Detalles</a>', value)
-          } else {
-            ""
-          }
-        }
-      )
+      }
     ),
-    elementId = "tbl-cultura"
-  )
-}
-# Reactable
-df_reactable |>
-  build_cultura_tbl()
-# ojs_define(df_reactable = df_reactable)
+    evento = colDef(
+      name = "Evento",
+      minWidth = 200
+    ),
+    recinto = colDef(
+      name = "Recinto",
+      minWidth = 200
+    ),
+    info_text = colDef(
+      name = "Info",
+      minWidth = 200,
+      html = TRUE # allow <br> line breaks
+    ),
+    location = colDef(
+      name = "Location",
+      minWidth = 200
+    ),
+    detail_url = colDef(
+      name = "Detail Url",
+      minWidth = 200,
+      html = TRUE,
+      cell = function(value) {
+        if (!is.na(value) && nzchar(value)) {
+          sprintf('<a href="%s" target="_blank">Ver Detalles</a>', value)
+        } else {
+          ""
+        }
+      }
+    )
+  ),
+  elementId = "tbl-cultura-manual"
+)
 ```
 
-
-## Shiny version (takes a long time)
+## Simply Version
 
 ```{shinylive-r}
 #| standalone: true
-library(arrow)
-library(dplyr)
-library(janitor)
-library(R.utils) # for gunzip
+#| viewerHeight: 600
+library(shiny)
 library(reactable)
-library(htmltools)
-library(fontawesome)
+library(bslib)
+library(reactable)
 
 # Raw URL of gzip-compressed parquet on GitHub
 raw_gz_url <- "https://raw.githubusercontent.com/dar4datascience/AWS-SAM-Cultura-CDMX/main/data/scraped_data_cultura_cartelera_cdmx.parquet"
@@ -171,20 +170,71 @@ download.file(raw_gz_url, tmp_gz, mode = "wb")
 tmp_parquet <- tempfile(fileext = ".parquet")
 R.utils::gunzip(tmp_gz, destname = tmp_parquet, overwrite = TRUE)
 
+library(duckdb)
+library(dbplyr)
+con <- dbConnect(duckdb())
+
 # Read Parquet into a tibble
-cartelera_cultural_cdmx <- arrow::read_parquet(tmp_parquet) |>
+cartelera_cultural_cdmx <- tbl(con, tmp_parquet) |>
+  collect() |> 
   janitor::clean_names()
 
+ui <- fluidPage(
+  titlePanel("row selection example"),
+  reactableOutput("tablesim"),
+  verbatimTextOutput("selected")
+)
 
-library(reactable)
-library(reactablefmtr)
+server <- function(input, output, session) {
+  selected <- reactive(getReactableState("tablesim", "selected"))
+
+  output$tablesim <- renderReactable({
+    reactable(cartelera_cultural_cdmx, selection = "multiple", onClick = "select")
+  })
+
+  output$selected <- renderPrint({
+    print(selected())
+  })
+
+  observe({
+    print(cartelera_cultural_cdmx[selected(), ])
+  })
+}
+
+shinyApp(ui, server)
+```
+
+## Shiny version (takes a long time)
+
+```r
+#| standalone: true
+library(arrow)
 library(dplyr)
+library(janitor)
+library(R.utils)  # for gunzip
+library(reactable)
+library(htmltools)
+library(fontawesome)
+library(reactablefmtr)
 library(purrr)
+
+# Raw URL of gzip-compressed parquet on GitHub
+raw_gz_url <- "https://raw.githubusercontent.com/dar4datascience/AWS-SAM-Cultura-CDMX/main/data/scraped_data_cultura_cartelera_cdmx.parquet"
+
+# Download gzip file and decompress to Parquet
+tmp_gz <- tempfile(fileext = ".parquet.gz")
+download.file(raw_gz_url, tmp_gz, mode = "wb")
+
+tmp_parquet <- tempfile(fileext = ".parquet")
+R.utils::gunzip(tmp_gz, destname = tmp_parquet, overwrite = TRUE)
+
+# Read Parquet into a tibble and clean column names
+cartelera_cultural_cdmx <- arrow::read_parquet(tmp_parquet) |>
+  janitor::clean_names()
 
 # Prepare the dataframe for reactable
 df_reactable <- cartelera_cultural_cdmx |>
   mutate(
-    # Collapse list columns into single strings
     info_text = map_chr(info, ~ paste(.x, collapse = "<br>"))
   ) |>
   distinct(
@@ -196,6 +246,7 @@ df_reactable <- cartelera_cultural_cdmx |>
     detail_url
   )
 
+# Build the reactable table function
 build_cultura_tbl <- function(df) {
   reactable(
     df,
@@ -223,23 +274,10 @@ build_cultura_tbl <- function(df) {
           }
         }
       ),
-      evento = colDef(
-        name = "Evento",
-        minWidth = 200
-      ),
-      recinto = colDef(
-        name = "Recinto",
-        minWidth = 200
-      ),
-      info_text = colDef(
-        name = "Info",
-        minWidth = 200,
-        html = TRUE # allow <br> line breaks
-      ),
-      location = colDef(
-        name = "Location",
-        minWidth = 200
-      ),
+      evento = colDef(name = "Evento", minWidth = 200),
+      recinto = colDef(name = "Recinto", minWidth = 200),
+      info_text = colDef(name = "Info", minWidth = 200, html = TRUE),
+      location = colDef(name = "Location", minWidth = 200),
       detail_url = colDef(
         name = "Detail Url",
         minWidth = 200,
@@ -253,35 +291,102 @@ build_cultura_tbl <- function(df) {
         }
       )
     ),
-    elementId = "tbl-cultura"
+    elementId = "tbl-cultura-shiny"
   )
 }
 
+#print(df_reactable)
+
+# Shiny app UI
 library(shiny)
-library(reactable)
 
 ui <- fluidPage(
-  titlePanel("row selection example"),
+  titlePanel("Cultura CDMX Cartelera"),
   reactableOutput("table"),
-  verbatimTextOutput("selected")
+  tableOutput("selected")
 )
 
 server <- function(input, output, session) {
-  selected <- reactive(getReactableState("table", "selected"))
+  selected <- reactive({
+    selected_rows <- getReactableState("table", "selected")
+    if (length(selected_rows) > 0) {
+      df_reactable[selected_rows, ]
+    } else {
+      data.frame()  # Return an empty data frame when no rows are selected
+    }
+  })
 
   output$table <- renderReactable({
-    build_cultura_tbl(df_reactable)
+    reactable(df_reactable)
   })
 
-  output$selected <- renderPrint({
-    print(selected())
-  })
-
-  observe({
-    print(df_reactable[selected(), ])
+  output$selected <- renderTable({
+    selected()
   })
 }
 
+# Run the app
 shinyApp(ui, server)
+
 ```
 
+
+## Joe Version
+
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 600
+library(shiny)
+library(bslib)
+
+# Define UI for app that draws a histogram ----
+ui <- page_sidebar(
+  sidebar = sidebar(open = "open",
+    numericInput("n", "Sample count", 100),
+    checkboxInput("pause", "Pause", FALSE),
+  ),
+  plotOutput("plot", width=1100)
+)
+
+server <- function(input, output, session) {
+  data <- reactive({
+    input$resample
+    if (!isTRUE(input$pause)) {
+      invalidateLater(1000)
+    }
+    rnorm(input$n)
+  })
+  
+  output$plot <- renderPlot({
+    hist(data(),
+      breaks = 40,
+      xlim = c(-2, 2),
+      ylim = c(0, 1),
+      lty = "blank",
+      xlab = "value",
+      freq = FALSE,
+      main = ""
+    )
+    
+    x <- seq(from = -2, to = 2, length.out = 500)
+    y <- dnorm(x)
+    lines(x, y, lwd=1.5)
+    
+    lwd <- 5
+    abline(v=0, col="red", lwd=lwd, lty=2)
+    abline(v=mean(data()), col="blue", lwd=lwd, lty=1)
+
+    legend(legend = c("Normal", "Mean", "Sample mean"),
+      col = c("black", "red", "blue"),
+      lty = c(1, 2, 1),
+      lwd = c(1, lwd, lwd),
+      x = 1,
+      y = 0.9
+    )
+  }, res=140)
+}
+
+# Create Shiny app ----
+shinyApp(ui = ui, server = server)
+```
