@@ -21,6 +21,8 @@ library(dplyr)
 library(janitor)
 library(R.utils) # for gunzip
 library(reactable)
+library(htmltools)
+library(fontawesome)
 
 # Raw URL of gzip-compressed parquet on GitHub
 raw_gz_url <- "https://raw.githubusercontent.com/dar4datascience/AWS-SAM-Cultura-CDMX/main/data/scraped_data_cultura_cartelera_cdmx.parquet"
@@ -65,7 +67,7 @@ df_reactable <- cartelera_cultural_cdmx |>
 reactable(
   df_reactable,
   theme = fivethirtyeight(centered = TRUE),
-  selection = "single",
+  selection = "multiple",
   onClick = "select",
   striped = TRUE,
   pagination = TRUE,
@@ -109,9 +111,65 @@ reactable(
         }
       }
     )
-  )
+  ),
+  elementId = "tbl-cultura"
 )
+
+
+# tagList(
+#   tags$button(
+#     class = "btn btn-primary",
+#     onclick = HTML("
+#       (function() {
+#         const table = document.querySelector('#tbl-cultura');
+#         if (!table) { alert('Tabla no encontrada'); return; }
+#
+#         // Get headers
+#         const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.innerText.trim());
+#
+#         // Get selected rows only
+#         const rows = Array.from(table.querySelectorAll('tbody tr[aria-selected=\"true\"]'))
+#           .map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim()));
+#
+#         if(rows.length === 0){ alert('No hay filas seleccionadas'); return; }
+#
+#         // Build CSV
+#         const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\\n');
+#
+#         // Trigger download
+#         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+#         const url = URL.createObjectURL(blob);
+#         const a = document.createElement('a');
+#         a.href = url;
+#         a.download = 'cultura_cdmx_mis_eventos.csv';
+#         a.click();
+#         URL.revokeObjectURL(url);
+#       })();
+#     "),
+#     tagList(
+#       fontawesome::fa("download"),
+#       "Descargar Seleccionados"
+#     )
+#   )
+# )
+#
+ojs_define(df_reactable = df_reactable)
 ```
+
+```{ojs}
+// Create an Observable value that automatically tracks the table's filtered data
+filteredData = Generators.observe(change => {
+  return Reactable.onStateChange('tbl-cultura', state => {
+    change(state.sortedData)
+  })
+})
+
+```
+
+```{ojs}
+Inputs.table(filteredData)
+```
+
 
 # Old Artifacts
 
