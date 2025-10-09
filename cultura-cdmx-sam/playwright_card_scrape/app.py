@@ -30,9 +30,8 @@ async def scroll_to_bottom(page, distance=500, timeout_ms=1000):
     """)
     await page.wait_for_timeout(timeout_ms)
 
-
 async def scrape_inner_page(page, retries=2):
-    """Scrape event details (description, info, schedule, location, banner image) from inner page with retries."""
+    """Scrape event details (description, info, schedule, location, banner image, evento, recinto) from inner page with retries."""
     for attempt in range(retries):
         try:
             data = await page.evaluate("""
@@ -75,6 +74,11 @@ async def scrape_inner_page(page, retries=2):
                         d.banner_url = null;
                     }
 
+                    // Evento and Recinto
+                    const titleWrapper = document.querySelector('.cdmx-billboard-page-event-banner-image-titles');
+                    d.evento = titleWrapper?.querySelector('h1')?.innerText.trim() || null;
+                    d.recinto = titleWrapper?.querySelector('h2')?.innerText.trim() || null;
+
                     return d;
                 }
             """)
@@ -83,7 +87,9 @@ async def scrape_inner_page(page, retries=2):
                 "info": None,
                 "schedule": None,
                 "location": None,
-                "banner_url": None
+                "banner_url": None,
+                "evento": None,
+                "recinto": None
             }
         except Exception as e:
             if "Execution context was destroyed" in str(e):
@@ -95,16 +101,19 @@ async def scrape_inner_page(page, retries=2):
                 "info": None,
                 "schedule": None,
                 "location": None,
-                "banner_url": None
+                "banner_url": None,
+                "evento": None,
+                "recinto": None
             }
     return {
         "description": None,
         "info": None,
         "schedule": None,
         "location": None,
-        "banner_url": None
+        "banner_url": None,
+        "evento": None,
+        "recinto": None
     }
-
 
 async def scrape_page_sequential(browser, page_number: int):
     """Scrape all cards sequentially on a page using a single browser context."""
