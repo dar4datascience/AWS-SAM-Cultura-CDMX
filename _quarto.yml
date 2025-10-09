@@ -5,6 +5,6 @@ project:
 
 format:
   html:
-    theme: cyborg
+    theme: minty
     css: styles.css
     toc: true
