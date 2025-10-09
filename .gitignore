@@ -1,2 +1,4 @@
-cultura-cdmx-sam/.aws-sam/* 
+cultura-cdmx-sam/.aws-sam/*
 .Rproj.user
+
+/.quarto/
