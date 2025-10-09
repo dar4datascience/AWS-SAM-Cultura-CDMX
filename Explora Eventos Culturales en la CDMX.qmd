@@ -53,8 +53,6 @@ saveRDS(cartelera_cultural_cdmx, "cartelera_cultura_cdmx.RData")
 ```
 
 ```{r createtable}
-#| column: page
-
 library(reactable)
 library(reactablefmtr)
 library(dplyr)
@@ -90,6 +88,8 @@ tagList(
 
 
 ```{r}
+#| column: page
+#| viewerHeight: 600
 reactable(
   df_reactable,
   theme = minty(centered = TRUE),
@@ -154,7 +154,7 @@ reactable(
 
 ```{shinylive-r}
 #| standalone: true
-#| column: screen
+#| viewerHeight: 1000
 library(shiny)
 library(dplyr)
 library(reactable)
@@ -250,6 +250,16 @@ build_cultura_tbl <- function(df) {
 
 
 ui <- fluidPage(
+  tagList(
+  tags$button(
+    class = "btn btn-primary",
+    onclick = "Reactable.downloadDataCSV('tbl-cultura-shiny')",
+    tagList(
+      fontawesome::fa("download"),
+      "Descargar Todo"
+    )
+  )
+),
   reactableOutput("tablesim"),
   verbatimTextOutput("selected")
 )
@@ -271,15 +281,4 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
-
-tagList(
-  tags$button(
-    class = "btn btn-primary",
-    onclick = "Reactable.downloadDataCSV('tbl-cultura-shiny')",
-    tagList(
-      fontawesome::fa("download"),
-      "Descargar Todo"
-    )
-  )
-)
 ```
