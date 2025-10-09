@@ -60,7 +60,9 @@ df_reactable <- cartelera_cultural_cdmx |>
     banner_url,
     info_text,
     location,
-    detail_url
+    detail_url,
+    evento,
+    recinto
   )
 
 # Reactable
@@ -89,6 +91,14 @@ reactable(
           ""
         }
       }
+    ),
+    evento = colDef(
+      name = "Evento",
+      minWidth = 200
+    ),
+    recinto = colDef(
+      name = "Recinto",
+      minWidth = 200
     ),
     info_text = colDef(
       name = "Info",
