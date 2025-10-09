@@ -148,7 +148,7 @@ df_reactable |>
 ```
 
 
-## Shiny version
+## Shiny version (takes a long time)
 
 ```{shinylive-r}
 #| standalone: true
