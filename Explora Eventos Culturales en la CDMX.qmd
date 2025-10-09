@@ -14,7 +14,7 @@ execute:
   cache: false
 ---
 
-# Non-Reactive
+## Static Version
 
 ```{r reactable}
 library(duckdb)
@@ -268,7 +268,7 @@ server <- function(input, output, session) {
   selected <- reactive(getReactableState("tablesim", "selected"))
 
   output$tablesim <- renderReactable({
-    build_cultura_tbl(cartelera_cultural_cdmx)
+    build_cultura_tbl(df_reactable)
   })
 
   output$selected <- renderPrint({
@@ -276,7 +276,7 @@ server <- function(input, output, session) {
   })
 
   observe({
-    print(cartelera_cultural_cdmx[selected(), ])
+    print(df_reactable[selected(), ])
   })
 }
 
