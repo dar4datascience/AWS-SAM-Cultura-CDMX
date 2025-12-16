@@ -62,15 +62,19 @@ library(purrr)
 df_reactable <- cartelera_cultural_cdmx |>
   mutate(
     # Collapse list columns into single strings
-    info_text = map_chr(info, ~ paste(.x, collapse = "<br>"))
+    info_text = map_chr(info, ~ paste(.x, collapse = "<br>")),
+    descripcion = map_chr(description, ~ glue::glue_collapse(.x, sep = " ")),
+    fecha = schedule |> pull(date)
   ) |>
   distinct(
     banner_url,
     evento,
     recinto,
+    fecha,
     info_text,
     location,
-    detail_url
+    detail_url,
+    descripcion
   )
 
 
@@ -92,13 +96,25 @@ tagList(
 #| viewerHeight: 600
 reactable(
   df_reactable,
-  theme = minty(centered = TRUE),
+  fullWidth = TRUE,
+  style = list(width = "100%", height = "100vh"),
+  wrap = TRUE,
+  theme = cyborg(centered = TRUE),
   selection = "multiple",
   onClick = "select",
   striped = TRUE,
   pagination = TRUE,
   searchable = TRUE,
   defaultColDef = colDef(align = "center"),
+  # details = function(index) {
+  #   desc <- df_reactable$descripcion[index]
+  #   desc_html <- gsub("\n", "<br>", desc) # Convert newlines to <br>
+  #   htmltools::div(
+  #     htmltools::tags$strong("Descripción del evento:"),
+  #     htmltools::tags$br(),
+  #     htmltools::tags$span(HTML(desc_html))
+  #   )
+  # },
   columns = list(
     banner_url = colDef(
       name = "Poster",
@@ -119,6 +135,9 @@ reactable(
     evento = colDef(
       name = "Evento",
       minWidth = 200
+    ),
+    fecha = colDef(
+      name = "Fecha"
     ),
     recinto = colDef(
       name = "Recinto",
@@ -144,6 +163,10 @@ reactable(
           ""
         }
       }
+    ),
+    descripcion = colDef(
+      name = "Descripcion",
+      html = FALSE
     )
   ),
   elementId = "tbl-cultura-manual"
