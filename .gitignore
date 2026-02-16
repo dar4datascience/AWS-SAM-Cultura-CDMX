@@ -5,3 +5,5 @@ cultura-cdmx-sam/.aws-sam/*
 
 *.RData
 *.rds
+
+.Rhistory
