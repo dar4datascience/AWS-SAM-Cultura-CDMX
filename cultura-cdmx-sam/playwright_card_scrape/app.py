@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import time
 import boto3
 from datetime import datetime
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
@@ -34,7 +35,38 @@ def _is_retryable_error(exc):
     return any(fragment in err_text for fragment in RETRYABLE_ERROR_FRAGMENTS)
 
 
-async def _retry_async(coro_factory, retries=3, base_delay=0.6, retryable_predicate=None):
+def _log_event(message, **fields):
+    payload = {"message": message, **fields}
+    print(json.dumps(payload, ensure_ascii=False))
+
+
+def _emit_metric(metric_name, value, unit="Count", dimensions=None):
+    dims = dimensions or {"Function": "PlaywrightCardScrapper"}
+    metric_event = {
+        "_aws": {
+            "Timestamp": int(time.time() * 1000),
+            "CloudWatchMetrics": [
+                {
+                    "Namespace": "CulturaScraper",
+                    "Dimensions": [list(dims.keys())],
+                    "Metrics": [{"Name": metric_name, "Unit": unit}],
+                }
+            ],
+        },
+        metric_name: value,
+        **dims,
+    }
+    print(json.dumps(metric_event, ensure_ascii=False))
+
+
+async def _retry_async(
+    coro_factory,
+    retries=3,
+    base_delay=0.6,
+    retryable_predicate=None,
+    metrics=None,
+    operation="unknown_operation",
+):
     last_exc = None
     for attempt in range(1, retries + 1):
         try:
@@ -45,6 +77,15 @@ async def _retry_async(coro_factory, retries=3, base_delay=0.6, retryable_predic
                 raise
             if attempt == retries:
                 raise
+            if metrics is not None:
+                metrics["retry_attempts"] = metrics.get("retry_attempts", 0) + 1
+            _log_event(
+                "retry_scheduled",
+                operation=operation,
+                attempt=attempt,
+                max_attempts=retries,
+                error=str(exc),
+            )
             await asyncio.sleep(base_delay * (2 ** (attempt - 1)))
     raise last_exc
 
@@ -133,8 +174,13 @@ async def scrape_inner_page(page, retries=2):
 
 async def scrape_page_sequential(browser, page_number: int):
     """Scrape all cards sequentially on a page using a single browser context."""
+    started_at = time.time()
     context = await browser.new_context()
     results = []
+    metrics = {
+        "retry_attempts": 0,
+        "cards_failed": 0,
+    }
 
     async def route_handler(route):
         if route.request.resource_type in {"image", "media", "font"}:
@@ -153,6 +199,8 @@ async def scrape_page_sequential(browser, page_number: int):
         retries=3,
         base_delay=0.7,
         retryable_predicate=_is_retryable_error,
+        metrics=metrics,
+        operation="new_page",
     )
 
     page.set_default_navigation_timeout(60_000)
@@ -164,6 +212,8 @@ async def scrape_page_sequential(browser, page_number: int):
         retries=3,
         base_delay=0.8,
         retryable_predicate=_is_retryable_error,
+        metrics=metrics,
+        operation="initial_goto",
     )
     await scroll_to_bottom(page)
     await page.wait_for_selector(
@@ -201,6 +251,8 @@ async def scrape_page_sequential(browser, page_number: int):
                 retries=3,
                 base_delay=0.7,
                 retryable_predicate=_is_retryable_error,
+                metrics=metrics,
+                operation="go_back",
             )
             await scroll_to_bottom(page)
 
@@ -211,11 +263,14 @@ async def scrape_page_sequential(browser, page_number: int):
                 "card_index": i,
                 **_empty_event_payload(),
             })
+            metrics["cards_failed"] += 1
             await _retry_async(
                 lambda: page.goto(url, wait_until="domcontentloaded"),
                 retries=2,
                 base_delay=0.8,
                 retryable_predicate=_is_retryable_error,
+                metrics=metrics,
+                operation="recovery_goto_timeout",
             )
             await scroll_to_bottom(page)
         except Exception as e:
@@ -225,15 +280,33 @@ async def scrape_page_sequential(browser, page_number: int):
                 "card_index": i,
                 **_empty_event_payload(),
             })
+            metrics["cards_failed"] += 1
             await _retry_async(
                 lambda: page.goto(url, wait_until="domcontentloaded"),
                 retries=2,
                 base_delay=0.8,
                 retryable_predicate=_is_retryable_error,
+                metrics=metrics,
+                operation="recovery_goto_exception",
             )
             await scroll_to_bottom(page)
 
     await context.close()
+
+    duration_ms = int((time.time() - started_at) * 1000)
+    _emit_metric("ScrapePageDurationMs", duration_ms, unit="Milliseconds")
+    _emit_metric("ScrapePageCardCount", len(results))
+    _emit_metric("ScrapePageCardFailures", metrics["cards_failed"])
+    _emit_metric("ScrapeRetryAttempts", metrics["retry_attempts"])
+    _log_event(
+        "scrape_page_completed",
+        page_number=page_number,
+        cards_scraped=len(results),
+        cards_failed=metrics["cards_failed"],
+        retry_attempts=metrics["retry_attempts"],
+        duration_ms=duration_ms,
+    )
+
     return results
 
 
@@ -265,6 +338,7 @@ async def run_scraper(page_number: int):
 
 def handler(event, context):
     """AWS Lambda handler."""
+    handler_started_at = time.time()
     # Handle if event is a plain int (from Step Functions Map) or dict
     if isinstance(event, int):
         page_number = event
@@ -283,11 +357,25 @@ def handler(event, context):
 
     snapshot_date = event.get("snapshot_date") if isinstance(event, dict) else datetime.utcnow().strftime("%Y-%m-%d")
     s3_key = f"snapshot_date/{snapshot_date}/events_page_{page_number}.json"
+    body_payload = json.dumps(results, ensure_ascii=False, separators=(",", ":"))
 
     s3.put_object(
         Bucket=bucket_name,
         Key=s3_key,
-        Body=json.dumps(results, ensure_ascii=False, indent=2)
+        Body=body_payload
+    )
+
+    handler_duration_ms = int((time.time() - handler_started_at) * 1000)
+    _emit_metric("ScrapeHandlerDurationMs", handler_duration_ms, unit="Milliseconds")
+    _emit_metric("ScrapeS3PayloadBytes", len(body_payload), unit="Bytes")
+    _log_event(
+        "scrape_handler_completed",
+        page_number=page_number,
+        snapshot_date=snapshot_date,
+        s3_key=s3_key,
+        events_count=len(results),
+        payload_bytes=len(body_payload),
+        duration_ms=handler_duration_ms,
     )
 
     return {
