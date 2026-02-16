@@ -225,6 +225,19 @@ Resources:
             "GetPageNumbers": {
               "Type": "Task",
               "Resource": "${CulturaPageCheck.Arn}",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "States.Timeout"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ],
               "ResultPath": "$.pages",
               "Next": "ScrapePagesMap"
             },
@@ -242,6 +255,19 @@ Resources:
                   "ScrapeSinglePage": {
                     "Type": "Task",
                     "Resource": "${PlaywrightCardScrapper.Arn}",
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException",
+                          "States.Timeout"
+                        ],
+                        "IntervalSeconds": 3,
+                        "MaxAttempts": 3,
+                        "BackoffRate": 2
+                      }
+                    ],
                     "End": true
                   }
                 }
@@ -253,6 +279,19 @@ Resources:
               "Type": "Task",
               "Comment": "Merge JSONs into Parquet using DuckDB",
               "Resource": "${DuckDBFunction.Arn}",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "States.Timeout"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2
+                }
+              ],
               "Parameters": {
                 "snapshot_date.$": "$.snapshot_date"
               },
