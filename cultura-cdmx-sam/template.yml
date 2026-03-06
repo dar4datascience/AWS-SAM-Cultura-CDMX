@@ -49,6 +49,7 @@ Resources:
       PackageType: Image
       Timeout: 300 # 300 seconds
       MemorySize: 3008  # For sequential scrapping
+      ReservedConcurrentExecutions: 5  # Hard cap matching Map MaxConcurrency
       EphemeralStorage:
         Size: 1024
       Architectures:
@@ -214,6 +215,7 @@ Resources:
       DefinitionString: !Sub |
         {
           "Comment": "Scrape all pages in parallel using Lambda Map, then merge outputs with DuckDB",
+          "TimeoutSeconds": 7200,
           "StartAt": "GenerateSnapshotDate",
           "States": {
             "GenerateSnapshotDate": {
