@@ -172,7 +172,7 @@ async def scrape_inner_page(page, retries=2):
             return _empty_event_payload()
     return _empty_event_payload()
 
-async def scrape_page_sequential(browser, page_number: int):
+async def scrape_page_sequential(browser, page_number: int, deadline: float = None):
     """Scrape all cards sequentially on a page using a single browser context."""
     started_at = time.time()
     context = await browser.new_context()
@@ -203,8 +203,8 @@ async def scrape_page_sequential(browser, page_number: int):
         operation="new_page",
     )
 
-    page.set_default_navigation_timeout(60_000)
-    page.set_default_timeout(30_000)
+    page.set_default_navigation_timeout(30_000)
+    page.set_default_timeout(20_000)
 
     url = f"https://cartelera.cdmx.gob.mx/busqueda?tipo=ALL&pagina={page_number}"
     await _retry_async(
@@ -227,13 +227,23 @@ async def scrape_page_sequential(browser, page_number: int):
     card_count = await page.locator(card_locator_selector).count()
 
     for i in range(card_count):
+        if deadline is not None and time.time() >= deadline:
+            _log_event(
+                "budget_guard_stopping",
+                page_number=page_number,
+                card_index=i,
+                card_count=card_count,
+                cards_scraped=len(results),
+            )
+            break
+
         try:
             card = page.locator(card_locator_selector).nth(i)
             await card.scroll_into_view_if_needed()
-            await card.click(timeout=15_000)
+            await card.click(timeout=8_000)
 
             # Wait for the detail container
-            await page.wait_for_selector(".cdmx-billboard-generic-page-container", timeout=30_000)
+            await page.wait_for_selector(".cdmx-billboard-generic-page-container", timeout=15_000)
 
             # Extract inner page data
             data = await scrape_inner_page(page)
@@ -310,7 +320,7 @@ async def scrape_page_sequential(browser, page_number: int):
     return results
 
 
-async def run_scraper(page_number: int):
+async def run_scraper(page_number: int, deadline: float = None):
     """Launch Playwright browser and scrape the page sequentially."""
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -330,7 +340,7 @@ async def run_scraper(page_number: int):
             ]
         )
         try:
-            results = await scrape_page_sequential(browser, page_number)
+            results = await scrape_page_sequential(browser, page_number, deadline=deadline)
         finally:
             await browser.close()
         return results
@@ -353,7 +363,12 @@ def handler(event, context):
     if not bucket_name:
         return {"statusCode": 500, "body": "Environment variable BUCKET_NAME not set."}
 
-    results = asyncio.run(run_scraper(page_number))
+    # Reserve 45s for S3 upload, metrics, and cleanup before Lambda hard-kills
+    remaining_ms = context.get_remaining_time_in_millis()
+    deadline = time.time() + (remaining_ms / 1000) - 45
+    _log_event("scraper_starting", page_number=page_number, remaining_ms=remaining_ms, deadline_in_s=round(remaining_ms / 1000 - 45, 1))
+
+    results = asyncio.run(run_scraper(page_number, deadline=deadline))
 
     snapshot_date = event.get("snapshot_date") if isinstance(event, dict) else datetime.utcnow().strftime("%Y-%m-%d")
     s3_key = f"snapshot_date/{snapshot_date}/events_page_{page_number}.json"
