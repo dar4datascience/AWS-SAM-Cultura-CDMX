@@ -148,8 +148,8 @@ def handler(event, context):
         scroll_to_bottom(page)
         _log_event("scroll_done", elapsed_ms=_elapsed_ms(started_at))
 
-        _log_event("wait_paginator_start", selector="#cdmx-billboard-event-paginator", elapsed_ms=_elapsed_ms(started_at))
-        page.wait_for_selector("#cdmx-billboard-event-paginator", timeout=20_000)
+        _log_event("wait_paginator_start", selector="#cdmx-billboard-event-paginator li.page.btn", elapsed_ms=_elapsed_ms(started_at))
+        page.wait_for_selector("#cdmx-billboard-event-paginator li.page.btn", timeout=20_000)
         _log_event("wait_paginator_done", elapsed_ms=_elapsed_ms(started_at))
 
         # Locate the last page button in the paginator
@@ -158,10 +158,24 @@ def handler(event, context):
             "#cdmx-billboard-event-paginator li.page.btn[jp-role='last']"
         )
         last_page_attr = paginator_last.get_attribute("jp-data") if paginator_last else None
-        last_page = int(last_page_attr) if last_page_attr else 1
+
+        if last_page_attr:
+            last_page = int(last_page_attr)
+        else:
+            # No "last" button — check if any page buttons exist at all
+            page_buttons = page.query_selector_all("#cdmx-billboard-event-paginator li.page.btn")
+            btn_count = len(page_buttons)
+            _log_event("paginator_no_last_btn", page_button_count=btn_count, elapsed_ms=_elapsed_ms(started_at))
+            if btn_count == 0:
+                raise RuntimeError(
+                    "Paginator container found but zero page buttons rendered — page load incomplete"
+                )
+            # Buttons exist but no 'last' button means legitimately 1 page
+            last_page = 1
+
         _log_event(
             "query_last_page_done",
-            paginator_found=paginator_last is not None,
+            paginator_last_found=paginator_last is not None,
             jp_data_attr=last_page_attr,
             last_page=last_page,
             elapsed_ms=_elapsed_ms(started_at),
