@@ -7,4 +7,4 @@ default:
       region: mx-central-1
       confirm_changeset: true
       capabilities: CAPABILITY_IAM
-version: 0.1
+version: 0.5

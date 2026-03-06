@@ -92,12 +92,22 @@ def scroll_to_bottom(page):
     page.wait_for_timeout(1000)
 
 
+def _elapsed_ms(started_at):
+    return int((time.time() - started_at) * 1000)
+
+
 def handler(event, context):
     """AWS Lambda handler to detect the last page number on cartelera.cdmx.gob.mx and return the page array."""
     started_at = time.time()
     metrics = {"retry_attempts": 0}
 
+    _log_event("handler_started", event=str(event))
+
+    _log_event("playwright_init_start", elapsed_ms=_elapsed_ms(started_at))
     with sync_playwright() as p:
+        _log_event("playwright_init_done", elapsed_ms=_elapsed_ms(started_at))
+
+        _log_event("browser_launch_start", elapsed_ms=_elapsed_ms(started_at))
         browser = p.chromium.launch(
             headless=True,
             args=[
@@ -108,6 +118,7 @@ def handler(event, context):
                 "--single-process"
             ]
         )
+        _log_event("browser_launch_done", elapsed_ms=_elapsed_ms(started_at))
 
         context = browser.new_context()
         context.route(
@@ -117,10 +128,12 @@ def handler(event, context):
             else route.continue_(),
         )
         page = context.new_page()
-        page.set_default_navigation_timeout(60_000)
-        page.set_default_timeout(30_000)
+        page.set_default_navigation_timeout(30_000)
+        page.set_default_timeout(20_000)
+        _log_event("page_created", elapsed_ms=_elapsed_ms(started_at))
 
         # Go to the main search page
+        _log_event("navigation_start", url="https://cartelera.cdmx.gob.mx/busqueda", elapsed_ms=_elapsed_ms(started_at))
         _retry_sync(
             lambda: page.goto("https://cartelera.cdmx.gob.mx/busqueda", wait_until="domcontentloaded"),
             retries=3,
@@ -129,17 +142,34 @@ def handler(event, context):
             metrics=metrics,
             operation="pagecheck_goto",
         )
+        _log_event("navigation_done", url=page.url, elapsed_ms=_elapsed_ms(started_at))
+
+        _log_event("scroll_start", elapsed_ms=_elapsed_ms(started_at))
         scroll_to_bottom(page)
-        page.wait_for_selector("#cdmx-billboard-event-paginator", timeout=25_000)
+        _log_event("scroll_done", elapsed_ms=_elapsed_ms(started_at))
+
+        _log_event("wait_paginator_start", selector="#cdmx-billboard-event-paginator", elapsed_ms=_elapsed_ms(started_at))
+        page.wait_for_selector("#cdmx-billboard-event-paginator", timeout=20_000)
+        _log_event("wait_paginator_done", elapsed_ms=_elapsed_ms(started_at))
 
         # Locate the last page button in the paginator
+        _log_event("query_last_page_start", elapsed_ms=_elapsed_ms(started_at))
         paginator_last = page.query_selector(
             "#cdmx-billboard-event-paginator li.page.btn[jp-role='last']"
         )
         last_page_attr = paginator_last.get_attribute("jp-data") if paginator_last else None
         last_page = int(last_page_attr) if last_page_attr else 1
+        _log_event(
+            "query_last_page_done",
+            paginator_found=paginator_last is not None,
+            jp_data_attr=last_page_attr,
+            last_page=last_page,
+            elapsed_ms=_elapsed_ms(started_at),
+        )
 
+        _log_event("browser_close_start", elapsed_ms=_elapsed_ms(started_at))
         browser.close()
+        _log_event("browser_close_done", elapsed_ms=_elapsed_ms(started_at))
 
     # Create an array of page numbers from 1 to last_page
     page_numbers = list(range(1, last_page + 1))

@@ -1,0 +1,12 @@
+version = 0.5
+
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "cultura-cartelera-cdmx"
+resolve_s3 = true
+s3_prefix = "cultura-cartelera-cdmx"
+region = "mx-central-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+image_repositories = ["CulturaPageCheck=829489762414.dkr.ecr.mx-central-1.amazonaws.com/culturacarteleracdmx6e12a291/culturapagecheck2c51f3darepo", "PlaywrightCardScrapper=829489762414.dkr.ecr.mx-central-1.amazonaws.com/culturacarteleracdmx6e12a291/playwrightcardscrapper7915698arepo"]
