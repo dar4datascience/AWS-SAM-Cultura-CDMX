@@ -37,6 +37,54 @@ def fail(msg): print(f"  [FAIL] {msg}")
 def info(msg): print(f"  [INFO] {msg}")
 
 
+async def capture_api_requests(context, page_number: int):
+    """TEST 0: Intercept /api/v1/internal/events/* calls using page.route() for reliable req+resp capture."""
+    section(f"TEST 0 — Intercept internal API calls (page {page_number})")
+
+    page = await context.new_page()
+    url = f"https://cartelera.cdmx.gob.mx/busqueda?tipo=ALL&pagina={page_number}"
+    info(f"Loading {url} ...")
+
+    # Capture request body via passive listener (does not block XHR)
+    req_bodies = {}
+    page.on("request", lambda r: req_bodies.update(
+        {r.url: r.post_data or ""}) if "/api/v1/internal/events/" in r.url else None
+    )
+
+    # expect_response waits for the API response without blocking it
+    try:
+        async with page.expect_response(
+            lambda r: "/api/v1/internal/events/" in r.url, timeout=20_000
+        ) as resp_info:
+            await page.goto(url, wait_until="domcontentloaded")
+            await page.evaluate("""
+                () => new Promise(resolve => {
+                    let total = 0;
+                    const t = setInterval(() => {
+                        window.scrollBy(0, 500); total += 500;
+                        if (total >= document.body.scrollHeight) { clearInterval(t); resolve(); }
+                    }, 200);
+                })
+            """)
+
+        response = await resp_info.value
+        req_body = req_bodies.get(response.url, "")
+        try:
+            resp_json = await response.json()
+            resp_snippet = json.dumps(resp_json, ensure_ascii=False, indent=2)[:3000]
+        except Exception:
+            resp_snippet = (await response.text())[:800]
+
+        ok(f"Captured API call: [{response.request.method}] {response.url}")
+        print(f"\n  Request body ({len(req_body)} bytes):\n{req_body}")
+        print(f"\n  Response HTTP {response.status}:\n{resp_snippet}")
+
+    except PlaywrightTimeoutError:
+        fail("No /api/v1/internal/events/ response captured within 20s")
+    finally:
+        await page.close()
+
+
 async def check_page_numbers(page):
     section("TEST 1 — CulturaPageCheck: paginator selector")
     url = BASE_URL
@@ -425,6 +473,7 @@ async def main():
         page.set_default_timeout(20_000)
 
         try:
+            await capture_api_requests(context, PAGE_NUMBER)
             await check_page_numbers(page)
             card_count = await check_card_listing(page)
             if card_count > 0:

@@ -173,13 +173,13 @@ async def scrape_inner_page(page, retries=2):
     return _empty_event_payload()
 
 async def _dismiss_swal2(page):
-    """Dismiss a SweetAlert2 popup if present. It appears on every page load and blocks card.click()."""
+    """Dismiss a SweetAlert2 popup. It appears with a short delay after page load and blocks card.click()."""
     try:
-        if await page.query_selector(".swal2-container"):
-            await page.keyboard.press("Escape")
-            await page.wait_for_selector(".swal2-container", state="hidden", timeout=3_000)
+        await page.wait_for_selector(".swal2-container", timeout=4_000)
+        await page.keyboard.press("Escape")
+        await page.wait_for_selector(".swal2-container", state="hidden", timeout=3_000)
     except Exception:
-        pass
+        pass  # Timeout = no popup appeared, safe to proceed
 
 
 async def scrape_page_sequential(browser, page_number: int, deadline: float = None):
@@ -216,9 +216,9 @@ async def scrape_page_sequential(browser, page_number: int, deadline: float = No
     page.set_default_navigation_timeout(30_000)
     page.set_default_timeout(20_000)
 
-    url = f"https://cartelera.cdmx.gob.mx/busqueda?tipo=ALL&pagina={page_number}"
+    listing_url = f"https://cartelera.cdmx.gob.mx/busqueda?tipo=ALL&pagina={page_number}"
     await _retry_async(
-        lambda: page.goto(url, wait_until="domcontentloaded"),
+        lambda: page.goto(listing_url, wait_until="domcontentloaded"),
         retries=3,
         base_delay=0.8,
         retryable_predicate=_is_retryable_error,
@@ -226,37 +226,52 @@ async def scrape_page_sequential(browser, page_number: int, deadline: float = No
         operation="initial_goto",
     )
     await scroll_to_bottom(page)
-    await _dismiss_swal2(page)
     await page.wait_for_selector(
         "#cdmx-billboard-tab-event-list .cdmx-billboard-event-result-list-item-container",
         timeout=25_000,
     )
 
-    card_locator_selector = (
-        "#cdmx-billboard-tab-event-list .cdmx-billboard-event-result-list-item-container"
-    )
-    card_count = await page.locator(card_locator_selector).count()
+    # Extract card data attributes — avoids clicking and the swal2 popup entirely
+    cards_data = await page.evaluate("""
+        () => Array.from(document.querySelectorAll(
+            '#cdmx-billboard-tab-event-list .cdmx-billboard-event-result-list-item-container'
+        )).map(c => ({
+            modal_id:     c.getAttribute('data-modal-id'),
+            searched_date: c.getAttribute('data-searched-date'),
+            slug:         c.getAttribute('data-event-slug'),
+        }))
+    """)
 
-    for i in range(card_count):
+    _log_event("cards_found", page_number=page_number, card_count=len(cards_data))
+
+    for i, card_attrs in enumerate(cards_data):
         if deadline is not None and time.time() >= deadline:
             _log_event(
                 "budget_guard_stopping",
                 page_number=page_number,
                 card_index=i,
-                card_count=card_count,
+                card_count=len(cards_data),
                 cards_scraped=len(results),
             )
             break
 
-        try:
-            card = page.locator(card_locator_selector).nth(i)
-            await card.scroll_into_view_if_needed()
-            await card.click(timeout=8_000)
+        modal_id = card_attrs.get("modal_id") or ""
+        date_raw = card_attrs.get("searched_date") or ""   # "DD/MM/YYYY"
+        slug = card_attrs.get("slug") or ""
+        date_fmt = date_raw.replace("/", "-")              # "DD-MM-YYYY"
+        detail_url = f"https://cartelera.cdmx.gob.mx/{modal_id}/{date_fmt}/{slug}"
 
-            # Wait for the detail container
+        try:
+            await _retry_async(
+                lambda u=detail_url: page.goto(u, wait_until="domcontentloaded"),
+                retries=2,
+                base_delay=0.8,
+                retryable_predicate=_is_retryable_error,
+                metrics=metrics,
+                operation="detail_goto",
+            )
             await page.wait_for_selector(".cdmx-billboard-generic-page-container", timeout=15_000)
 
-            # Extract inner page data
             data = await scrape_inner_page(page)
 
             results.append({
@@ -266,54 +281,22 @@ async def scrape_page_sequential(browser, page_number: int, deadline: float = No
                 **data,
             })
 
-            # ✅ Go back to results page and re-scroll
-            await _retry_async(
-                lambda: page.go_back(wait_until="domcontentloaded"),
-                retries=3,
-                base_delay=0.7,
-                retryable_predicate=_is_retryable_error,
-                metrics=metrics,
-                operation="go_back",
-            )
-            await scroll_to_bottom(page)
-            await _dismiss_swal2(page)
-
         except PlaywrightTimeoutError:
-            print(f"Timeout scraping card {i} on page {page_number}")
+            print(f"Timeout scraping card {i} (modal_id={modal_id}) on page {page_number}")
             results.append({
                 "page_number": page_number,
                 "card_index": i,
-                **_empty_event_payload(),
+                **_empty_event_payload(detail_url=detail_url),
             })
             metrics["cards_failed"] += 1
-            await _retry_async(
-                lambda: page.goto(url, wait_until="domcontentloaded"),
-                retries=2,
-                base_delay=0.8,
-                retryable_predicate=_is_retryable_error,
-                metrics=metrics,
-                operation="recovery_goto_timeout",
-            )
-            await scroll_to_bottom(page)
-            await _dismiss_swal2(page)
         except Exception as e:
-            print(f"Failed to scrape card {i} on page {page_number}: {e}")
+            print(f"Failed card {i} (modal_id={modal_id}) on page {page_number}: {e}")
             results.append({
                 "page_number": page_number,
                 "card_index": i,
-                **_empty_event_payload(),
+                **_empty_event_payload(detail_url=detail_url),
             })
             metrics["cards_failed"] += 1
-            await _retry_async(
-                lambda: page.goto(url, wait_until="domcontentloaded"),
-                retries=2,
-                base_delay=0.8,
-                retryable_predicate=_is_retryable_error,
-                metrics=metrics,
-                operation="recovery_goto_exception",
-            )
-            await scroll_to_bottom(page)
-            await _dismiss_swal2(page)
 
     await context.close()
 
