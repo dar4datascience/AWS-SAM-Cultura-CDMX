@@ -172,6 +172,16 @@ async def scrape_inner_page(page, retries=2):
             return _empty_event_payload()
     return _empty_event_payload()
 
+async def _dismiss_swal2(page):
+    """Dismiss a SweetAlert2 popup if present. It appears on every page load and blocks card.click()."""
+    try:
+        if await page.query_selector(".swal2-container"):
+            await page.keyboard.press("Escape")
+            await page.wait_for_selector(".swal2-container", state="hidden", timeout=3_000)
+    except Exception:
+        pass
+
+
 async def scrape_page_sequential(browser, page_number: int, deadline: float = None):
     """Scrape all cards sequentially on a page using a single browser context."""
     started_at = time.time()
@@ -216,6 +226,7 @@ async def scrape_page_sequential(browser, page_number: int, deadline: float = No
         operation="initial_goto",
     )
     await scroll_to_bottom(page)
+    await _dismiss_swal2(page)
     await page.wait_for_selector(
         "#cdmx-billboard-tab-event-list .cdmx-billboard-event-result-list-item-container",
         timeout=25_000,
@@ -265,6 +276,7 @@ async def scrape_page_sequential(browser, page_number: int, deadline: float = No
                 operation="go_back",
             )
             await scroll_to_bottom(page)
+            await _dismiss_swal2(page)
 
         except PlaywrightTimeoutError:
             print(f"Timeout scraping card {i} on page {page_number}")
@@ -283,6 +295,7 @@ async def scrape_page_sequential(browser, page_number: int, deadline: float = No
                 operation="recovery_goto_timeout",
             )
             await scroll_to_bottom(page)
+            await _dismiss_swal2(page)
         except Exception as e:
             print(f"Failed to scrape card {i} on page {page_number}: {e}")
             results.append({
@@ -300,6 +313,7 @@ async def scrape_page_sequential(browser, page_number: int, deadline: float = No
                 operation="recovery_goto_exception",
             )
             await scroll_to_bottom(page)
+            await _dismiss_swal2(page)
 
     await context.close()
 

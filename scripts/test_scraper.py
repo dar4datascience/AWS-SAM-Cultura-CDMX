@@ -55,7 +55,7 @@ async def check_page_numbers(page):
             }, 200);
         })
     """)
-    await page.wait_for_timeout(1000)
+    await page.wait_for_timeout(3000)  # extra wait for JS render
 
     # Check paginator container
     container = await page.query_selector("#cdmx-billboard-event-paginator")
@@ -63,6 +63,21 @@ async def check_page_numbers(page):
         ok("Paginator container found: #cdmx-billboard-event-paginator")
     else:
         fail("Paginator container NOT found: #cdmx-billboard-event-paginator")
+
+    # Wait explicitly for page buttons
+    try:
+        await page.wait_for_selector("#cdmx-billboard-event-paginator li.page.btn", timeout=15_000)
+        ok("Page buttons appeared after explicit wait")
+    except PlaywrightTimeoutError:
+        fail("Page buttons NEVER appeared within 15s after explicit wait")
+        # Dump paginator innerHTML to see actual DOM
+        inner = await page.evaluate("""
+            () => {
+                const el = document.querySelector('#cdmx-billboard-event-paginator');
+                return el ? el.innerHTML.trim().slice(0, 800) : 'not found';
+            }
+        """)
+        info("Paginator innerHTML: " + inner)
 
     # Check for any page buttons
     buttons = await page.query_selector_all("#cdmx-billboard-event-paginator li.page.btn")
@@ -139,16 +154,153 @@ async def check_card_detail(page, card_index: int):
     await page.wait_for_timeout(1000)
     await page.wait_for_selector(CARD_SELECTOR, timeout=20_000)
 
-    card = page.locator(CARD_SELECTOR).nth(card_index)
+    card_locator_selector = CARD_SELECTOR
+    card = page.locator(card_locator_selector).nth(card_index)
     await card.scroll_into_view_if_needed()
 
+    # Inspect card data attributes (site uses data-event-slug, NOT <a href>)
+    card_el = await card.element_handle()
+    card_html = await page.evaluate("(el) => el.outerHTML.slice(0, 500)", card_el)
+    info(f"Card {card_index} outerHTML snippet:\n    {card_html}")
+
+    event_slug = await card.get_attribute("data-event-slug")
+    modal_id   = await card.get_attribute("data-modal-id")
+    info(f"data-event-slug='{event_slug}'  data-modal-id='{modal_id}'")
+
+    if not event_slug:
+        fail(f"Card {card_index} has no data-event-slug — cannot build detail URL")
+        return
+
+    # Dismiss cookie/consent banners if present
+    for dismiss_sel in [
+        "button[id*='accept']", "button[class*='accept']", "button[class*='cookie']",
+        "#onetrust-accept-btn-handler", ".cookie-accept", "[aria-label*='Accept']",
+    ]:
+        el = await page.query_selector(dismiss_sel)
+        if el:
+            await el.click()
+            info(f"Dismissed banner: {dismiss_sel}")
+            await page.wait_for_timeout(500)
+            break
+
+    # Check for any full-page overlays covering the card
+    overlay_info = await page.evaluate("""
+        () => {
+            const overlays = Array.from(document.querySelectorAll(
+                '[style*="position: fixed"], [style*="position:fixed"], .modal, .overlay, .popup'
+            )).filter(el => {
+                const r = el.getBoundingClientRect();
+                return r.width > 200 && r.height > 200;
+            });
+            return overlays.map(el => el.tagName + '#' + el.id + '.' + el.className.slice(0,60));
+        }
+    """)
+    if overlay_info:
+        info(f"Overlays/modals detected: {overlay_info}")
+    else:
+        ok("No large overlays detected")
+
+    # Check what element Playwright sees at the card's center point
+    bbox = await card.bounding_box()
+    if bbox:
+        cx = bbox['x'] + bbox['width'] / 2
+        cy = bbox['y'] + bbox['height'] / 2
+        el_at_center = await page.evaluate(
+            f"() => {{ const el = document.elementFromPoint({cx:.1f}, {cy:.1f}); "
+            f"return el ? el.tagName + ' | ' + el.className.slice(0,100) : 'none'; }}"
+        )
+        info(f"Element at card center ({cx:.0f},{cy:.0f}): {el_at_center}")
+    else:
+        info("Card has no bounding box (not in viewport)")
+
+    # Check for sticky/fixed headers covering the card
+    fixed_elements = await page.evaluate("""
+        () => Array.from(document.querySelectorAll('*')).filter(el => {
+            const s = window.getComputedStyle(el);
+            return (s.position === 'fixed' || s.position === 'sticky')
+                   && el.getBoundingClientRect().height > 20;
+        }).map(el => ({
+            tag: el.tagName,
+            cls: el.className.slice(0, 80),
+            rect: el.getBoundingClientRect()
+        }))
+    """)
+    if fixed_elements:
+        info(f"Fixed/sticky elements ({len(fixed_elements)}):")
+        for fe in fixed_elements[:5]:
+            r = fe['rect']
+            print(f"    {fe['tag']}.{fe['cls'][:60]}  bottom={r['bottom']:.0f}px")
+    else:
+        ok("No fixed/sticky elements found")
+
+    # Dismiss SweetAlert2 popup if present (it blocks card.click() and takes ~15s to auto-dismiss)
+    if await page.query_selector(".swal2-container"):
+        await page.keyboard.press("Escape")
+        ok("Dismissing swal2 popup via Escape")
+        try:
+            await page.wait_for_selector(".swal2-container", state="hidden", timeout=3_000)
+            ok("swal2 popup dismissed")
+        except PlaywrightTimeoutError:
+            fail("swal2 popup did not dismiss within 3s")
+    else:
+        ok("No swal2 popup present")
+
+    # Try real Playwright click (generates isTrusted=true events)
+    info("Trying real Playwright click (no force) ...")
+    url_before = page.url
     t0 = time.time()
     try:
-        await card.click(timeout=10_000)
-        ok(f"Card {card_index} clicked in {time.time()-t0:.1f}s — URL: {page.url}")
+        await card.click(timeout=15_000)
+        ok(f"Real click succeeded in {time.time()-t0:.1f}s")
     except PlaywrightTimeoutError:
-        fail(f"Card {card_index} click timed out after {time.time()-t0:.1f}s")
+        fail(f"Real click timed out after {time.time()-t0:.1f}s")
+        # Last resort: dispatch trusted click via CDP
+        info("Dispatching click via CDP dispatchMouseEvent ...")
+        if bbox:
+            cdp = await context.new_cdp_session(page)
+            await cdp.send("Input.dispatchMouseEvent", {
+                "type": "mousePressed", "x": cx, "y": cy,
+                "button": "left", "clickCount": 1
+            })
+            await cdp.send("Input.dispatchMouseEvent", {
+                "type": "mouseReleased", "x": cx, "y": cy,
+                "button": "left", "clickCount": 1
+            })
+            await page.wait_for_timeout(500)
+            ok(f"CDP click dispatched at ({cx:.0f},{cy:.0f})")
+        else:
+            fail("No bounding box, cannot dispatch CDP click")
+            return
+    except Exception as e:
+        fail(f"Real click raised: {e}")
         return
+
+    # Capture requests + DOM scan after click
+    requests_made = []
+    page.on("request", lambda req: requests_made.append((req.resource_type, req.url)))
+    await page.wait_for_timeout(5_000)
+    info(f"Requests fired after click ({len(requests_made)} total):")
+    for rtype, rurl in requests_made[:20]:
+        print(f"    [{rtype:10s}] {rurl}")
+
+    new_elements = await page.evaluate("""
+        () => [
+            '.cdmx-billboard-generic-page-container',
+            '[class*="modal"]',
+            '[class*="event-detail"]',
+            '[class*="billboard-page"]',
+        ].map(sel => ({ sel, found: !!document.querySelector(sel),
+            html: document.querySelector(sel)?.outerHTML.slice(0,200)||null }))
+    """)
+    info("DOM scan after click:")
+    for entry in new_elements:
+        print(f"    {'[OK]  ' if entry['found'] else '[FAIL]'} {entry['sel']}")
+        if entry["html"]: print(f"       {entry['html']}")
+
+    if page.url != url_before:
+        ok(f"URL changed to: {page.url}")
+    else:
+        info(f"URL unchanged after click: {page.url}")
 
     # Wait for detail container
     t0 = time.time()
@@ -264,12 +416,9 @@ async def main():
         context = await browser.new_context()
 
         # Block images/media/fonts to speed up
-        async def route_handler(route):
-            if route.request.resource_type in {"image", "media", "font"}:
-                await route.abort()
-            else:
-                await route.continue_()
-        await context.route("**/*", route_handler)
+        # No resource blocking — we need to observe ALL requests the JS makes
+        # (including XHR/fetch for modal content)
+        pass
 
         page = await context.new_page()
         page.set_default_navigation_timeout(30_000)
