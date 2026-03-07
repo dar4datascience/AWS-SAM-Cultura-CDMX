@@ -31,6 +31,8 @@ jobs:
 
       - name: "Setup R dependencies for Quarto's knitr engine"
         uses: r-lib/actions/setup-renv@v2
+        with:
+          cache-version: 1
 
       # Back to our regularly scheduled Quarto output
       - name: "Set up Quarto"
