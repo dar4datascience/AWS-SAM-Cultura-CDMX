@@ -1,7 +1,7 @@
 project:
+  type: website
   title: "Explora Eventos Culturales en la CDMX"
-
-
+  output-dir: _site
 
 format:
   html:
