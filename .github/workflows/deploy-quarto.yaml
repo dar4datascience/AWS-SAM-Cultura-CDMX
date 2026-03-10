@@ -9,6 +9,9 @@ on:
 jobs:
   demo-website:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     # Only restrict concurrency for non-PR jobs
     concurrency:
       group: quarto-website-${{ github.event_name != 'pull_request' || github.run_id }}
