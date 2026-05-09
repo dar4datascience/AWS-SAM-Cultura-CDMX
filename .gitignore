@@ -10,3 +10,4 @@ cultura-cdmx-sam/.aws-sam/*
 
 venv/
 .venv/
+.positai
