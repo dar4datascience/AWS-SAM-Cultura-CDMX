@@ -11,3 +11,5 @@ cultura-cdmx-sam/.aws-sam/*
 venv/
 .venv/
 .positai
+
+**/*.quarto_ipynb
