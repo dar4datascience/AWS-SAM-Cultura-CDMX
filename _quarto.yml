@@ -5,10 +5,6 @@ project:
 
 website:
   title: "Explora Eventos Culturales en la CDMX"
-  navbar:
-    left:
-      - text: "Eventos"
-        href: "Explora Eventos Culturales en la CDMX.qmd"
 
 format:
   html:
