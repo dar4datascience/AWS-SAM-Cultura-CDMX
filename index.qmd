@@ -21,7 +21,7 @@ PARQUET_URL = "https://cdn.jsdelivr.net/gh/dar4datascience/AWS-SAM-Cultura-CDMX@
 
 db = {
   const client = await DuckDBClient.of();
-  await client.sql`
+  await client.query(`
     CREATE TABLE events AS
     SELECT
       evento,
@@ -33,9 +33,9 @@ db = {
       detail_url,
       list_aggregate(description, 'string_agg', ' ')   AS descripcion,
       list_aggregate(info,        'string_agg', ' | ') AS info_text
-    FROM read_parquet(${PARQUET_URL})
+    FROM read_parquet('${PARQUET_URL}')
     ORDER BY schedule.date
-  `;
+  `);
   return client;
 }
 
