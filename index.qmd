@@ -79,23 +79,8 @@ allEvents = {
 
 // Sorted unique ISO dates that have events (for calendar dots)
 eventDates = new Set(allEvents.map(e => e.fecha_iso).filter(Boolean))
-```
 
-```{ojs}
-//| output: false
-
-// ── 2. Search input ──────────────────────────────────────────────────────────
-viewof searchText = Inputs.text({
-  placeholder: "Buscar evento o recinto…",
-  width: "100%"
-})
-```
-
-```{ojs}
-//| output: false
-
-// ── 3. Calendar widget ───────────────────────────────────────────────────────
-// Custom mutable state for calendar mode + selections
+// ── 2. Mutable state for calendar ────────────────────────────────────────────
 mutable calMode    = "range"   // "range" | "days"
 mutable rangeStart = null
 mutable rangeEnd   = null
@@ -103,6 +88,44 @@ mutable selectedDays = new Set()
 mutable calYear    = parseInt([...eventDates].sort()[0]?.slice(0,4) ?? new Date().getFullYear())
 mutable calMonth   = parseInt([...eventDates].sort()[0]?.slice(5,7) ?? new Date().getMonth()+1) - 1
 
+// ── 3. Reactive filtered dataset ────────────────────────────────────────────
+filtered = {
+  const q = searchText.trim().toLowerCase();
+  return allEvents.filter(e => {
+    if (q) {
+      const hay = `${e.evento||""} ${e.recinto||""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (calMode === "range" && (rangeStart || rangeEnd)) {
+      const d = e.fecha_iso;
+      if (!d) return false;
+      const lo = rangeStart && rangeEnd ? Math.min(rangeStart, rangeEnd) : rangeStart;
+      const hi = rangeStart && rangeEnd ? Math.max(rangeStart, rangeEnd) : null;
+      if (lo && d < lo) return false;
+      if (hi && d > hi) return false;
+      if (lo && !hi && d !== lo) return false;
+    } else if (calMode === "days" && selectedDays.size > 0) {
+      if (!selectedDays.has(e.fecha_iso)) return false;
+    }
+    return true;
+  });
+}
+```
+
+# {.sidebar}
+
+```{ojs}
+// ── 4. Search input ──────────────────────────────────────────────────────────
+viewof searchText = Inputs.text({
+  placeholder: "Buscar evento o recinto…",
+  width: "100%"
+})
+```
+
+---
+
+```{ojs}
+// ── 5. Calendar widget ───────────────────────────────────────────────────────
 calendarWidget = {
   const MONTH_NAMES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                        "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
@@ -226,37 +249,16 @@ calendarWidget = {
 }
 ```
 
-```{ojs}
-//| output: false
+---
 
-// ── 4. Reactive filtered dataset ────────────────────────────────────────────
-filtered = {
-  const q = searchText.trim().toLowerCase();
-  return allEvents.filter(e => {
-    if (q) {
-      const hay = `${e.evento||""} ${e.recinto||""}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    if (calMode === "range" && (rangeStart || rangeEnd)) {
-      const d = e.fecha_iso;
-      if (!d) return false;
-      const lo = rangeStart && rangeEnd ? Math.min(rangeStart, rangeEnd) : rangeStart;
-      const hi = rangeStart && rangeEnd ? Math.max(rangeStart, rangeEnd) : null;
-      if (lo && d < lo) return false;
-      if (hi && d > hi) return false;
-      if (lo && !hi && d !== lo) return false;
-    } else if (calMode === "days" && selectedDays.size > 0) {
-      if (!selectedDays.has(e.fecha_iso)) return false;
-    }
-    return true;
-  });
-}
+```{ojs}
+htl.html`<div class="event-count">${filtered.length} evento${filtered.length !== 1 ? "s" : ""} encontrado${filtered.length !== 1 ? "s" : ""}</div>`
 ```
 
-```{ojs}
-//| output: false
+# Eventos Culturales CDMX
 
-// ── 5. Table with poster images ──────────────────────────────────────────────
+```{ojs}
+// ── 6. Table with poster images ──────────────────────────────────────────────
 eventsTable = {
   const rows = filtered.map(e => {
     const poster = (e.banner_url && e.detail_url)
@@ -294,28 +296,4 @@ eventsTable = {
     </table>
   </div>`;
 }
-```
-
-# {.sidebar}
-
-```{ojs}
-viewof searchText
-```
-
----
-
-```{ojs}
-calendarWidget
-```
-
----
-
-```{ojs}
-htl.html`<div class="event-count">${filtered.length} evento${filtered.length !== 1 ? "s" : ""} encontrado${filtered.length !== 1 ? "s" : ""}</div>`
-```
-
-# Eventos Culturales CDMX
-
-```{ojs}
-eventsTable
 ```
