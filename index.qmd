@@ -11,33 +11,54 @@ execute:
   echo: false
 ---
 
+```{python}
+#| output: false
+import gzip
+import shutil
+import urllib.request
+import tempfile
+import duckdb
+import json
+
+url = "https://cdn.jsdelivr.net/gh/dar4datascience/AWS-SAM-Cultura-CDMX@main/data/scraped_data_cultura_cartelera_cdmx.parquet"
+
+# Download and decompress the parquet
+with urllib.request.urlopen(url) as response:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".parquet") as tmp_parquet:
+        with gzip.GzipFile(fileobj=response) as unzipped:
+            shutil.copyfileobj(unzipped, tmp_parquet)
+        parquet_path = tmp_parquet.name
+
+# Query decompressed file using DuckDB
+con = duckdb.connect()
+df = con.execute(f"""
+  SELECT
+    evento,
+    recinto,
+    schedule.date  AS fecha_raw,
+    schedule.hour  AS hora,
+    location,
+    banner_url,
+    detail_url,
+    list_aggregate(description, 'string_agg', ' ')   AS descripcion,
+    list_aggregate(info,        'string_agg', ' | ') AS info_text
+  FROM read_parquet('{parquet_path}')
+  ORDER BY schedule.date
+""").df()
+
+df = df.fillna("")
+
+# Serialize to events.json so Quarto OJS can bundle it as a FileAttachment
+events = df.to_dict(orient="records")
+with open("events.json", "w", encoding="utf-8") as f:
+    json.dump(events, f, ensure_ascii=False)
+```
+
 ```{ojs}
 //| output: false
 
-// ── 1. Load data via DuckDB-Wasm (built into Quarto's OJS runtime) ──────────
-// DuckDBClient is globally available in {ojs} cells — no import needed.
-
-PARQUET_URL = "https://cdn.jsdelivr.net/gh/dar4datascience/AWS-SAM-Cultura-CDMX@main/data/scraped_data_cultura_cartelera_cdmx.parquet"
-
-db = {
-  const client = await DuckDBClient.of();
-  await client.query(`
-    CREATE TABLE events AS
-    SELECT
-      evento,
-      recinto,
-      schedule.date  AS fecha_raw,
-      schedule.hour  AS hora,
-      location,
-      banner_url,
-      detail_url,
-      list_aggregate(description, 'string_agg', ' ')   AS descripcion,
-      list_aggregate(info,        'string_agg', ' | ') AS info_text
-    FROM read_parquet('${PARQUET_URL}')
-    ORDER BY schedule.date
-  `);
-  return client;
-}
+// ── 1. Load pre-processed JSON ───────────────────────────────────────────────
+rawEvents = FileAttachment("events.json").json()
 
 allEvents = {
   const MESES = {
@@ -53,8 +74,7 @@ allEvents = {
     const yr  = m[3];
     return `${yr}-${mon}-${day}`;
   }
-  const rows = await db.query("SELECT * FROM events");
-  return rows.map(r => ({ ...r, fecha_iso: parseDate(r.fecha_raw) }));
+  return rawEvents.map(r => ({ ...r, fecha_iso: parseDate(r.fecha_raw) }));
 }
 
 // Sorted unique ISO dates that have events (for calendar dots)
