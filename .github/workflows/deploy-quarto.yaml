@@ -46,6 +46,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
+          path: _site
           retention-days: 1
 
       # Use an Action deploy to push the artifact onto GitHub Pages

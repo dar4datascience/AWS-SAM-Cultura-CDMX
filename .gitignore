@@ -13,3 +13,5 @@ venv/
 .positai
 
 **/*.quarto_ipynb
+
+_site/**

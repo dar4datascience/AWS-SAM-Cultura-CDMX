@@ -81,12 +81,25 @@ allEvents = {
 eventDates = new Set(allEvents.map(e => e.fecha_iso).filter(Boolean))
 
 // ── 2. Mutable state for calendar ────────────────────────────────────────────
+// Helper: get current week (Mon-Sun)
+currentWeek = {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = day === 0 ? -6 : 1 - day; // Mon = 1, Sun = 0
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diff);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return { start: fmt(monday), end: fmt(sunday) };
+}
+
 mutable calMode    = "range"   // "range" | "days"
-mutable rangeStart = null
-mutable rangeEnd   = null
+mutable rangeStart = currentWeek.start
+mutable rangeEnd   = currentWeek.end
 mutable selectedDays = new Set()
-mutable calYear    = parseInt([...eventDates].sort()[0]?.slice(0,4) ?? new Date().getFullYear())
-mutable calMonth   = parseInt([...eventDates].sort()[0]?.slice(5,7) ?? new Date().getMonth()+1) - 1
+mutable calYear    = parseInt(currentWeek.start.slice(0,4))
+mutable calMonth   = parseInt(currentWeek.start.slice(5,7)) - 1
 
 // ── 3. Reactive filtered dataset ────────────────────────────────────────────
 filtered = {
@@ -274,7 +287,7 @@ eventsTable = {
       <td class="col-fecha">${e.fecha_iso ? e.fecha_iso.split("-").reverse().join("/") : ""}</td>
       <td class="col-hora">${e.hora || ""}</td>
       <td class="col-recinto">${e.recinto || ""}</td>
-      <td class="col-info">${htl.html([infoHtml])}</td>
+      <td class="col-info">${infoHtml}</td>
       <td class="col-location">${e.location || ""}</td>
       <td class="col-link">${link}</td>
     </tr>`;
