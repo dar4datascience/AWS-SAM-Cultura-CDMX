@@ -1,175 +1,301 @@
 ---
 title: "Explora Eventos Culturales en la CDMX"
 format:
-  html:
-    resources: 
-      - shinylive-sw.js
-filters:
-  - shinylive
-
+  dashboard:
+    theme: cyborg
+    css: styles.css
+    nav-buttons:
+      - icon: github
+        href: https://github.com/dar4datascience/AWS-SAM-Cultura-CDMX
 execute:
   echo: false
-  message: false
-  warning: false
-  cache: false
 ---
 
-## Static Version
+```{ojs}
+//| output: false
 
-```{r reactable}
-library(duckdb)
-library(dbplyr)
-library(dplyr)
-library(janitor)
-library(R.utils) # for gunzip
-library(reactable)
-library(htmltools)
-library(fontawesome)
+// ── 1. Load data via DuckDB-Wasm (built into Quarto's OJS runtime) ──────────
+// DuckDBClient is globally available in {ojs} cells — no import needed.
 
-# Raw URL of gzip-compressed parquet on GitHub
-raw_gz_url <- "https://raw.githubusercontent.com/dar4datascience/AWS-SAM-Cultura-CDMX/main/data/scraped_data_cultura_cartelera_cdmx.parquet"
+PARQUET_URL = "https://cdn.jsdelivr.net/gh/dar4datascience/AWS-SAM-Cultura-CDMX@main/data/scraped_data_cultura_cartelera_cdmx.parquet"
 
-# Download gzip file
-tmp_gz <- tempfile(fileext = ".parquet.gz")
-download.file(raw_gz_url, tmp_gz, mode = "wb")
+db = {
+  const client = await DuckDBClient.of();
+  await client.sql`
+    CREATE TABLE events AS
+    SELECT
+      evento,
+      recinto,
+      schedule.date  AS fecha_raw,
+      schedule.hour  AS hora,
+      location,
+      banner_url,
+      detail_url,
+      list_aggregate(description, 'string_agg', ' ')   AS descripcion,
+      list_aggregate(info,        'string_agg', ' | ') AS info_text
+    FROM read_parquet(${PARQUET_URL})
+    ORDER BY schedule.date
+  `;
+  return client;
+}
 
-# Decompress gzip to Parquet
-tmp_parquet <- tempfile(fileext = ".parquet")
-R.utils::gunzip(tmp_gz, destname = tmp_parquet, overwrite = TRUE)
+allEvents = {
+  const MESES = {
+    enero:1, febrero:2, marzo:3, abril:4, mayo:5, junio:6,
+    julio:7, agosto:8, septiembre:9, octubre:10, noviembre:11, diciembre:12
+  };
+  function parseDate(raw) {
+    if (!raw) return "";
+    const m = raw.match(/(\d{1,2})\s+De\s+(\w+)\s+De\s+(\d{4})/i);
+    if (!m) return "";
+    const day = m[1].padStart(2,"0");
+    const mon = String(MESES[m[2].toLowerCase()] || 0).padStart(2,"0");
+    const yr  = m[3];
+    return `${yr}-${mon}-${day}`;
+  }
+  const rows = await db.query("SELECT * FROM events");
+  return rows.map(r => ({ ...r, fecha_iso: parseDate(r.fecha_raw) }));
+}
 
-# Read Parquet into a tibble
-
-library(duckdb)
-library(dbplyr)
-con <- dbConnect(duckdb())
-
-# Read Parquet into a tibble
-cartelera_cultural_cdmx <- tbl(con, tmp_parquet) |>
-  collect() |>
-  janitor::clean_names()
-
-saveRDS(cartelera_cultural_cdmx, "cartelera_cultura_cdmx.RData")
-# Now you can use dplyr and reactable
+// Sorted unique ISO dates that have events (for calendar dots)
+eventDates = new Set(allEvents.map(e => e.fecha_iso).filter(Boolean))
 ```
 
-```{r createtable}
-library(reactable)
-library(reactablefmtr)
-library(dplyr)
-library(purrr)
+```{ojs}
+//| output: false
 
-# Prepare the dataframe for reactable
-df_reactable <- cartelera_cultural_cdmx |>
-  mutate(
-    # Collapse list columns into single strings
-    info_text = map_chr(info, ~ paste(.x, collapse = "<br>")),
-    descripcion = map_chr(description, ~ glue::glue_collapse(.x, sep = " ")),
-    fecha = schedule |> pull(date)
-  ) |>
-  distinct(
-    banner_url,
-    evento,
-    recinto,
-    fecha,
-    info_text,
-    location,
-    detail_url,
-    descripcion
-  )
-
-
-tagList(
-  tags$button(
-    class = "btn btn-primary",
-    onclick = "Reactable.downloadDataCSV('tbl-cultura-manual')",
-    tagList(
-      fontawesome::fa("download"),
-      "Descargar Todo"
-    )
-  )
-)
+// ── 2. Search input ──────────────────────────────────────────────────────────
+viewof searchText = Inputs.text({
+  placeholder: "Buscar evento o recinto…",
+  width: "100%"
+})
 ```
 
+```{ojs}
+//| output: false
 
-```{r}
-#| column: page
-#| viewerHeight: 600
-reactable(
-  df_reactable,
-  fullWidth = TRUE,
-  style = list(width = "100%", height = "100vh"),
-  wrap = TRUE,
-  theme = cyborg(centered = TRUE),
-  selection = "multiple",
-  onClick = "select",
-  striped = TRUE,
-  pagination = TRUE,
-  searchable = TRUE,
-  defaultColDef = colDef(align = "center"),
-  # details = function(index) {
-  #   desc <- df_reactable$descripcion[index]
-  #   desc_html <- gsub("\n", "<br>", desc) # Convert newlines to <br>
-  #   htmltools::div(
-  #     htmltools::tags$strong("Descripción del evento:"),
-  #     htmltools::tags$br(),
-  #     htmltools::tags$span(HTML(desc_html))
-  #   )
-  # },
-  columns = list(
-    banner_url = colDef(
-      name = "Poster",
-      maxWidth = 200,
-      html = TRUE,
-      cell = function(value, index) {
-        url <- df_reactable$detail_url[index]
-        if (!is.na(value) && nzchar(value)) {
-          sprintf(
-            '<a href="%s" target="_blank"><img src="%s" height="200" width="235"></a>',
-            url, value
-          )
+// ── 3. Calendar widget ───────────────────────────────────────────────────────
+// Custom mutable state for calendar mode + selections
+mutable calMode    = "range"   // "range" | "days"
+mutable rangeStart = null
+mutable rangeEnd   = null
+mutable selectedDays = new Set()
+mutable calYear    = parseInt([...eventDates].sort()[0]?.slice(0,4) ?? new Date().getFullYear())
+mutable calMonth   = parseInt([...eventDates].sort()[0]?.slice(5,7) ?? new Date().getMonth()+1) - 1
+
+calendarWidget = {
+  const MONTH_NAMES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+                       "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const DAY_NAMES   = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+
+  function isoToDisplay(iso) {
+    if (!iso) return "";
+    const [y,mo,d] = iso.split("-");
+    return `${d}/${mo}/${y}`;
+  }
+
+  function renderGrid() {
+    const yr  = calYear;
+    const mo  = calMonth;
+    const firstDay    = new Date(yr, mo, 1).getDay();
+    const daysInMonth = new Date(yr, mo + 1, 0).getDate();
+
+    let cells = DAY_NAMES.map(d =>
+      htl.html`<div class="cal-head">${d}</div>`
+    );
+    for (let i = 0; i < firstDay; i++) {
+      cells.push(htl.html`<div class="cal-cell empty"></div>`);
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = `${yr}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+      const lo = rangeStart && rangeEnd
+        ? (rangeStart < rangeEnd ? rangeStart : rangeEnd)
+        : rangeStart;
+      const hi = rangeStart && rangeEnd
+        ? (rangeStart < rangeEnd ? rangeEnd   : rangeStart)
+        : null;
+
+      const classes = [
+        "cal-cell",
+        eventDates.has(iso)     ? "has-event"    : "",
+        calMode === "range" && lo && iso === lo  ? "range-start"  : "",
+        calMode === "range" && hi && iso === hi  ? "range-end"    : "",
+        calMode === "range" && lo && hi && iso > lo && iso < hi ? "in-range" : "",
+        calMode === "days"  && selectedDays.has(iso) ? "selected-day" : ""
+      ].filter(Boolean).join(" ");
+
+      const cell = htl.html`<div class=${classes}>${d}</div>`;
+      cell.addEventListener("click", () => {
+        if (calMode === "range") {
+          if (!rangeStart || (rangeStart && rangeEnd)) {
+            mutable rangeStart = iso;
+            mutable rangeEnd   = null;
+          } else {
+            mutable rangeEnd = iso;
+          }
         } else {
-          ""
+          const next = new Set(selectedDays);
+          next.has(iso) ? next.delete(iso) : next.add(iso);
+          mutable selectedDays = next;
         }
-      }
-    ),
-    evento = colDef(
-      name = "Evento",
-      minWidth = 200
-    ),
-    fecha = colDef(
-      name = "Fecha"
-    ),
-    recinto = colDef(
-      name = "Recinto",
-      minWidth = 200
-    ),
-    info_text = colDef(
-      name = "Info",
-      minWidth = 200,
-      html = TRUE # allow <br> line breaks
-    ),
-    location = colDef(
-      name = "Location",
-      minWidth = 200
-    ),
-    detail_url = colDef(
-      name = "Detail Url",
-      minWidth = 200,
-      html = TRUE,
-      cell = function(value) {
-        if (!is.na(value) && nzchar(value)) {
-          sprintf('<a href="%s" target="_blank">Ver Detalles</a>', value)
-        } else {
-          ""
-        }
-      }
-    ),
-    descripcion = colDef(
-      name = "Descripcion",
-      html = FALSE
-    )
-  ),
-  elementId = "tbl-cultura-manual"
-)
+        container.replaceChildren(...buildWidget());
+      });
+      cells.push(cell);
+    }
+    return cells;
+  }
+
+  function buildWidget() {
+    // Mode toggle bar
+    const btnRange = htl.html`<button class="mode-btn ${calMode==="range"?"active":""}">Rango</button>`;
+    const btnDays  = htl.html`<button class="mode-btn ${calMode==="days" ?"active":""}">Días</button>`;
+    const btnClear = htl.html`<button class="mode-btn clear-btn">✕ Limpiar</button>`;
+
+    btnRange.onclick = () => { mutable calMode = "range"; container.replaceChildren(...buildWidget()); };
+    btnDays.onclick  = () => { mutable calMode = "days";  container.replaceChildren(...buildWidget()); };
+    btnClear.onclick = () => {
+      mutable rangeStart   = null;
+      mutable rangeEnd     = null;
+      mutable selectedDays = new Set();
+      container.replaceChildren(...buildWidget());
+    };
+
+    const toggleBar = htl.html`<div class="calendar-mode-toggle">${btnRange}${btnDays}${btnClear}</div>`;
+
+    // Hint text
+    let hintText = "";
+    if (calMode === "range") {
+      if (!rangeStart)     hintText = "Selecciona fecha de inicio";
+      else if (!rangeEnd)  hintText = "Ahora selecciona fecha de fin";
+      else                 hintText = `${isoToDisplay(rangeStart)} → ${isoToDisplay(rangeEnd)}`;
+    } else {
+      hintText = selectedDays.size > 0
+        ? `${selectedDays.size} día(s) seleccionado(s)`
+        : "Haz clic en uno o más días";
+    }
+    const hint = htl.html`<div class="cal-hint">${hintText}</div>`;
+
+    // Navigation
+    const prevBtn = htl.html`<button class="cal-nav-btn">‹</button>`;
+    const nextBtn = htl.html`<button class="cal-nav-btn">›</button>`;
+    prevBtn.onclick = () => {
+      let m = calMonth - 1, y = calYear;
+      if (m < 0) { m = 11; y--; }
+      mutable calMonth = m;
+      mutable calYear  = y;
+      container.replaceChildren(...buildWidget());
+    };
+    nextBtn.onclick = () => {
+      let m = calMonth + 1, y = calYear;
+      if (m > 11) { m = 0; y++; }
+      mutable calMonth = m;
+      mutable calYear  = y;
+      container.replaceChildren(...buildWidget());
+    };
+    const nav = htl.html`<div class="calendar-nav">${prevBtn}<span class="cal-month-label">${MONTH_NAMES[calMonth]} ${calYear}</span>${nextBtn}</div>`;
+
+    // Grid
+    const grid = htl.html`<div class="calendar-grid">${renderGrid()}</div>`;
+
+    return [toggleBar, hint, nav, grid];
+  }
+
+  const container = htl.html`<div class="calendar-container"></div>`;
+  container.replaceChildren(...buildWidget());
+  return container;
+}
 ```
 
+```{ojs}
+//| output: false
+
+// ── 4. Reactive filtered dataset ────────────────────────────────────────────
+filtered = {
+  const q = searchText.trim().toLowerCase();
+  return allEvents.filter(e => {
+    if (q) {
+      const hay = `${e.evento||""} ${e.recinto||""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (calMode === "range" && (rangeStart || rangeEnd)) {
+      const d = e.fecha_iso;
+      if (!d) return false;
+      const lo = rangeStart && rangeEnd ? Math.min(rangeStart, rangeEnd) : rangeStart;
+      const hi = rangeStart && rangeEnd ? Math.max(rangeStart, rangeEnd) : null;
+      if (lo && d < lo) return false;
+      if (hi && d > hi) return false;
+      if (lo && !hi && d !== lo) return false;
+    } else if (calMode === "days" && selectedDays.size > 0) {
+      if (!selectedDays.has(e.fecha_iso)) return false;
+    }
+    return true;
+  });
+}
+```
+
+```{ojs}
+//| output: false
+
+// ── 5. Table with poster images ──────────────────────────────────────────────
+eventsTable = {
+  const rows = filtered.map(e => {
+    const poster = (e.banner_url && e.detail_url)
+      ? htl.html`<a href="${e.detail_url}" target="_blank"><img src="${e.banner_url}" class="event-poster" loading="lazy"></a>`
+      : "";
+    const link = e.detail_url
+      ? htl.html`<a href="${e.detail_url}" target="_blank" class="ver-link">Ver →</a>`
+      : "";
+    const infoHtml = (e.info_text || "").replace(/\s*\|\s*/g, "<br>");
+    return htl.html`<tr>
+      <td class="col-poster">${poster}</td>
+      <td class="col-evento">${e.evento || ""}</td>
+      <td class="col-fecha">${e.fecha_iso ? e.fecha_iso.split("-").reverse().join("/") : ""}</td>
+      <td class="col-hora">${e.hora || ""}</td>
+      <td class="col-recinto">${e.recinto || ""}</td>
+      <td class="col-info">${htl.html([infoHtml])}</td>
+      <td class="col-location">${e.location || ""}</td>
+      <td class="col-link">${link}</td>
+    </tr>`;
+  });
+
+  return htl.html`<div class="table-wrapper">
+    <table id="events-table">
+      <thead><tr>
+        <th>Poster</th>
+        <th>Evento</th>
+        <th>Fecha</th>
+        <th>Hora</th>
+        <th>Recinto</th>
+        <th>Info</th>
+        <th>Ubicación</th>
+        <th>Enlace</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+```
+
+# {.sidebar}
+
+```{ojs}
+viewof searchText
+```
+
+---
+
+```{ojs}
+calendarWidget
+```
+
+---
+
+```{ojs}
+htl.html`<div class="event-count">${filtered.length} evento${filtered.length !== 1 ? "s" : ""} encontrado${filtered.length !== 1 ? "s" : ""}</div>`
+```
+
+# Eventos Culturales CDMX
+
+```{ojs}
+eventsTable
+```

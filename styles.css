@@ -1,0 +1,236 @@
+/* ============================================================
+   CULTURA CDMX — Quarto Dashboard + OJS styles
+   Theme: cyborg  |  Accent: #2a9fd6
+   ============================================================ */
+
+/* ── Calendar container ─────────────────────────────────────── */
+.calendar-container {
+  font-size: 0.85rem;
+  padding: 0.25rem 0;
+}
+
+/* ── Calendar mode toggle ───────────────────────────────────── */
+.calendar-mode-toggle {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid #444;
+  border-radius: 5px;
+  background: #1a1a1a;
+  color: #adafae;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.mode-btn:hover        { background: #222; border-color: #2a9fd6; color: #fff; }
+.mode-btn.active       { background: #2a9fd6; border-color: #2a9fd6; color: #fff; font-weight: 600; }
+.mode-btn.clear-btn    { flex: 0 0 auto; background: #1a1a1a; color: #888; }
+.mode-btn.clear-btn:hover { background: #3d1c1c; border-color: #ff6b6b; color: #ff6b6b; }
+
+/* ── Calendar hint ──────────────────────────────────────────── */
+.cal-hint {
+  font-size: 0.75rem;
+  color: #777;
+  min-height: 1.2em;
+  margin-bottom: 0.4rem;
+  text-align: center;
+}
+
+/* ── Calendar navigation ────────────────────────────────────── */
+.calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+.cal-nav-btn {
+  background: none;
+  border: none;
+  color: #2a9fd6;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0 0.3rem;
+  line-height: 1;
+}
+.cal-nav-btn:hover { color: #fff; }
+.cal-month-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #eee;
+}
+
+/* ── Calendar grid ──────────────────────────────────────────── */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.cal-head {
+  text-align: center;
+  font-size: 0.68rem;
+  color: #555;
+  padding: 2px 0;
+  font-weight: 600;
+}
+
+.cal-cell {
+  text-align: center;
+  font-size: 0.78rem;
+  padding: 5px 1px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #adafae;
+  position: relative;
+  transition: background 0.1s, color 0.1s;
+  user-select: none;
+  line-height: 1.3;
+}
+.cal-cell:hover  { background: #222; color: #fff; }
+.cal-cell.empty  { cursor: default; pointer-events: none; }
+
+/* event dot */
+.cal-cell.has-event::after {
+  content: "";
+  display: block;
+  width: 4px;
+  height: 4px;
+  background: #2a9fd6;
+  border-radius: 50%;
+  margin: 1px auto 0;
+}
+
+/* range selection */
+.cal-cell.range-start,
+.cal-cell.range-end {
+  background: #2a9fd6 !important;
+  color: #fff !important;
+  font-weight: 700;
+}
+.cal-cell.in-range {
+  background: rgba(42,159,214,0.18);
+  color: #ddd;
+  border-radius: 0;
+}
+.cal-cell.range-start { border-radius: 4px 0 0 4px; }
+.cal-cell.range-end   { border-radius: 0 4px 4px 0; }
+.cal-cell.range-start.range-end { border-radius: 4px; }
+
+/* individual day selection */
+.cal-cell.selected-day {
+  background: #2a9fd6 !important;
+  color: #fff !important;
+  font-weight: 700;
+}
+
+/* ── Event count ────────────────────────────────────────────── */
+.event-count {
+  font-size: 0.88rem;
+  color: #2a9fd6;
+  font-weight: 600;
+  text-align: center;
+  padding: 0.3rem 0;
+}
+
+/* ── Table wrapper (inside dashboard card) ──────────────────── */
+.table-wrapper {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: calc(100vh - 120px);
+}
+
+#events-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.83rem;
+  table-layout: fixed;
+}
+
+#events-table thead tr {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #111;
+  border-bottom: 2px solid #2a9fd6;
+}
+
+#events-table th {
+  padding: 0.55rem 0.5rem;
+  text-align: left;
+  color: #2a9fd6;
+  font-weight: 600;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#events-table tbody tr {
+  border-bottom: 1px solid #1a1a1a;
+  transition: background 0.1s;
+}
+#events-table tbody tr:nth-child(even) { background: #0c0c0c; }
+#events-table tbody tr:hover           { background: #161616; }
+
+#events-table td {
+  padding: 0.45rem 0.5rem;
+  vertical-align: top;
+  color: #adafae;
+  word-break: break-word;
+}
+
+/* Column widths */
+.col-poster   { width: 110px; text-align: center; }
+.col-evento   { width: 200px; }
+.col-fecha    { width: 85px;  white-space: nowrap; }
+.col-hora     { width: 55px;  white-space: nowrap; }
+.col-recinto  { width: 170px; }
+.col-info     { width: 180px; font-size: 0.76rem; color: #777; }
+.col-location { width: 170px; font-size: 0.76rem; color: #777; }
+.col-link     { width: 65px;  text-align: center; }
+
+/* Poster image */
+.event-poster {
+  width: 95px;
+  height: 115px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #2a2a2a;
+  display: block;
+  margin: 0 auto;
+}
+
+/* "Ver →" link */
+.ver-link {
+  color: #2a9fd6;
+  text-decoration: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.ver-link:hover { color: #fff; text-decoration: underline; }
+
+/* ── Sidebar search input override ─────────────────────────── */
+.dashboard-sidebar input[type="text"],
+.card-body input[type="text"] {
+  background: #1a1a1a !important;
+  border-color: #444 !important;
+  color: #eee !important;
+}
+.dashboard-sidebar input[type="text"]:focus,
+.card-body input[type="text"]:focus {
+  border-color: #2a9fd6 !important;
+  box-shadow: 0 0 0 0.15rem rgba(42,159,214,0.25) !important;
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .col-info, .col-location { display: none; }
+  .col-poster { width: 80px; }
+  .col-evento { width: 140px; }
+}

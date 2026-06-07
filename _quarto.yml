@@ -5,9 +5,3 @@ project:
 
 website:
   title: "Explora Eventos Culturales en la CDMX"
-
-format:
-  html:
-    theme: cyborg
-    css: styles.css
-    toc: true
