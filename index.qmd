@@ -106,7 +106,7 @@ filtered = {
   const q = searchText.trim().toLowerCase();
   return allEvents.filter(e => {
     if (q) {
-      const hay = `${e.evento||""} ${e.recinto||""}`.toLowerCase();
+      const hay = `${e.evento||""} ${e.recinto||""} ${e.descripcion||""} ${e.info_text||""} ${e.location||""}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     if (calMode === "range" && (rangeStart || rangeEnd)) {
