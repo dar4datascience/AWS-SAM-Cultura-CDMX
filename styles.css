@@ -292,10 +292,337 @@
   background: #1a7aad;
 }
 
-/* ── Responsive ─────────────────────────────────────────────── */
+/* ── Responsive: Tablet (480-768px) ─────────────────────────── */
 @media (max-width: 768px) {
   .col-info, .col-location { display: none; }
-  .col-poster { width: 80px; }
-  .col-evento { width: 140px; }
-  .col-check { width: 28px; }
+  .col-poster { width: 70px; }
+  .col-evento { width: 130px; }
+  .col-check { width: 32px; }
+  
+  #events-table { font-size: 0.78rem; }
+  #events-table th { font-size: 0.72rem; padding: 0.4rem 0.35rem; }
+  #events-table td { padding: 0.35rem 0.35rem; }
+  
+  .event-poster { width: 60px; height: 75px; }
+  
+  .table-wrapper {
+    position: relative;
+  }
+  
+  .table-wrapper::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 30px;
+    height: 100%;
+    background: linear-gradient(to right, transparent, rgba(0,0,0,0.5));
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  
+  .table-wrapper:not(:hover)::after {
+    opacity: 1;
+  }
+}
+
+/* ── Responsive: Phone (<480px) - Card Layout ──────────────── */
+@media (max-width: 480px) {
+  .col-poster { display: none; }
+  
+  #events-table,
+  #events-table thead,
+  #events-table tbody,
+  #events-table tr,
+  #events-table td {
+    display: block;
+    width: 100%;
+  }
+  
+  #events-table thead {
+    position: absolute;
+    left: -9999px;
+    visibility: hidden;
+  }
+  
+  #events-table tbody tr {
+    display: grid;
+    grid-template-columns: 44px 1fr auto;
+    grid-template-rows: auto auto auto;
+    gap: 0.25rem 0.5rem;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    background: #0c0c0c;
+    position: relative;
+  }
+  
+  #events-table tbody tr:nth-child(even) {
+    background: #111;
+  }
+  
+  #events-table tbody tr.row-selected {
+    border-color: #2a9fd6;
+    background: rgba(42, 159, 214, 0.1) !important;
+  }
+  
+  #events-table tbody td {
+    padding: 0;
+    position: static;
+  }
+  
+  #events-table tbody td.col-check {
+    grid-column: 1;
+    grid-row: 1 / 4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+  }
+  
+  #events-table tbody td.col-poster {
+    display: none;
+  }
+  
+  #events-table tbody td.col-evento {
+    grid-column: 2;
+    grid-row: 1;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #fff;
+    width: auto;
+    white-space: normal;
+    word-break: break-word;
+  }
+  
+  #events-table tbody td.col-fecha,
+  #events-table tbody td.col-hora {
+    grid-column: 2;
+    grid-row: 2;
+    font-size: 0.8rem;
+    width: auto;
+    display: inline;
+  }
+  
+  #events-table tbody td.col-fecha {
+    color: #2a9fd6;
+  }
+  
+  #events-table tbody td.col-hora {
+    color: #888;
+  }
+  
+  #events-table tbody td.col-hora::before {
+    content: " • ";
+    color: #444;
+  }
+  
+  #events-table tbody td.col-recinto {
+    grid-column: 2;
+    grid-row: 3;
+    font-size: 0.78rem;
+    color: #777;
+    width: auto;
+  }
+  
+  #events-table tbody td.col-info,
+  #events-table tbody td.col-location {
+    display: none;
+  }
+  
+  #events-table tbody td.col-link {
+    grid-column: 3;
+    grid-row: 1 / 4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+  }
+  
+  .ver-link {
+    padding: 0.5rem;
+    font-size: 0.85rem;
+  }
+  
+  .table-wrapper {
+    max-height: none;
+    overflow-x: visible;
+    padding: 0.5rem;
+  }
+  
+  .table-wrapper::after {
+    display: none;
+  }
+  
+  .calendar-mode-toggle {
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  
+  .mode-btn {
+    padding: 0.5rem 0.6rem;
+    font-size: 0.82rem;
+  }
+  
+  .cal-cell {
+    padding: 8px 2px;
+    font-size: 0.82rem;
+  }
+  
+  .event-count {
+    font-size: 0.82rem;
+    padding: 0.4rem 0;
+  }
+}
+
+/* ── Touch-friendly controls (coarse pointer) ─────────────── */
+@media (pointer: coarse) {
+  .col-check input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    position: relative;
+  }
+  
+  .col-check input[type="checkbox"]::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 44px;
+    height: 44px;
+    cursor: pointer;
+  }
+  
+  .mode-btn {
+    min-height: 44px;
+    padding: 0.5rem 0.6rem;
+  }
+  
+  .cal-cell {
+    min-height: 36px;
+    padding: 8px 2px;
+  }
+  
+  .cal-nav-btn {
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 1.3rem;
+  }
+  
+  .export-btn {
+    min-height: 48px;
+    font-size: 0.9rem;
+  }
+  
+  .dashboard-sidebar input[type="text"],
+  .card-body input[type="text"] {
+    min-height: 44px;
+    font-size: 16px !important;
+  }
+  
+  #events-table tbody tr {
+    cursor: pointer;
+  }
+  
+  #events-table tbody tr:active {
+    background: rgba(42, 159, 214, 0.15) !important;
+  }
+  
+  .ver-link {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* ── Active states for touch feedback ──────────────────────── */
+.mode-btn:active {
+  transform: scale(0.97);
+}
+
+.cal-cell:active:not(.empty) {
+  background: #2a9fd6 !important;
+  color: #fff !important;
+}
+
+.export-btn:active {
+  transform: scale(0.98);
+}
+
+/* ── Floating export button on mobile when events selected ── */
+@media (max-width: 480px) {
+  .selection-widget {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, #111 80%, transparent);
+    padding: 1rem;
+    z-index: 100;
+    display: none;
+  }
+  
+  .selection-widget:has(.export-btn[style*="display: block"]),
+  .selection-widget:has(.export-btn[style*="display:block"]) {
+    display: block;
+  }
+  
+  .selected-count {
+    text-align: center;
+    margin-bottom: 0.5rem;
+  }
+  
+  .export-btn {
+    width: 100%;
+    max-width: 300px;
+    margin: 0 auto;
+    display: block !important;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.5);
+  }
+  
+  .table-wrapper {
+    padding-bottom: 100px;
+  }
+}
+
+/* ── Master checkbox area on mobile ────────────────────────── */
+.mobile-select-all {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .mobile-select-all {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  
+  .mobile-select-all input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+    accent-color: #2a9fd6;
+    cursor: pointer;
+  }
+  
+  .mobile-select-all label {
+    font-size: 0.85rem;
+    color: #adafae;
+    cursor: pointer;
+    flex: 1;
+  }
+  
+  .mobile-select-all:active {
+    background: #222;
+  }
 }

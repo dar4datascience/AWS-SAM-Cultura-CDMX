@@ -401,18 +401,24 @@ eventsTable = {
   }
   window.__eventSelection.filtered = filtered;
 
+  const mobileSelectAll = htl.html`<div class="mobile-select-all">
+    <input type="checkbox" id="mobile-master-checkbox">
+    <label for="mobile-master-checkbox">Seleccionar todos</label>
+  </div>`;
+
   const table = htl.html`<div class="table-wrapper">
+    ${mobileSelectAll}
     <table id="events-table">
       <thead><tr>
         <th class="col-check"><input type="checkbox" id="master-checkbox"></th>
-        <th>Poster</th>
-        <th>Evento</th>
-        <th>Fecha</th>
-        <th>Hora</th>
-        <th>Recinto</th>
-        <th>Info</th>
-        <th>Ubicación</th>
-        <th>Enlace</th>
+        <th class="col-poster">Poster</th>
+        <th class="col-evento">Evento</th>
+        <th class="col-fecha">Fecha</th>
+        <th class="col-hora">Hora</th>
+        <th class="col-recinto">Recinto</th>
+        <th class="col-info">Info</th>
+        <th class="col-location">Ubicación</th>
+        <th class="col-link">Enlace</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -430,8 +436,11 @@ eventsTable = {
       if (btn) btn.style.display = count > 0 ? "block" : "none";
       if (btn) btn.textContent = `📅 Exportar a iCal (${count})`;
       
+      const allSelected = count === state.lastLen && state.lastLen > 0;
       const master = document.getElementById("master-checkbox");
-      if (master) master.checked = count === state.lastLen && state.lastLen > 0;
+      const mobileMaster = document.getElementById("mobile-master-checkbox");
+      if (master) master.checked = allSelected;
+      if (mobileMaster) mobileMaster.checked = allSelected;
     }
 
     // Row checkbox handlers
@@ -455,7 +464,7 @@ eventsTable = {
       });
     });
 
-    // Master checkbox handler
+    // Master checkbox handler (desktop)
     const master = document.getElementById("master-checkbox");
     if (master) {
       master.addEventListener("change", function() {
@@ -465,6 +474,25 @@ eventsTable = {
           cb.checked = checked;
           cb.closest("tr").classList.toggle("row-selected", checked);
         });
+        // Sync mobile master checkbox
+        const mobileMaster = document.getElementById("mobile-master-checkbox");
+        if (mobileMaster) mobileMaster.checked = checked;
+        updateUI();
+      });
+    }
+
+    // Mobile master checkbox handler
+    const mobileMaster = document.getElementById("mobile-master-checkbox");
+    if (mobileMaster) {
+      mobileMaster.addEventListener("change", function() {
+        const checked = this.checked;
+        state.selected = checked ? new Set([...Array(state.lastLen).keys()]) : new Set();
+        document.querySelectorAll("#events-table tbody input[type=checkbox]").forEach(cb => {
+          cb.checked = checked;
+          cb.closest("tr").classList.toggle("row-selected", checked);
+        });
+        // Sync desktop master checkbox
+        if (master) master.checked = checked;
         updateUI();
       });
     }
