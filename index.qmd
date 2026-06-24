@@ -265,15 +265,114 @@ calendarWidget = {
 ---
 
 ```{ojs}
+// ── Selection counter + Export button (static HTML, updated by table JS) ─────
+selectionWidget = {
+  function generateICal() {
+    const state = window.__eventSelection;
+    if (!state) return;
+    const events = Array.from(state.selected).map(idx => state.filtered[idx]).filter(Boolean);
+    if (events.length === 0) return;
+
+    function escapeIcal(str) {
+      if (!str) return "";
+      return str.replace(/\\/g, "\\\\")
+                .replace(/;/g, "\\;")
+                .replace(/,/g, "\\,")
+                .replace(/\n/g, "\\n");
+    }
+
+    function hashCode(s) {
+      let h = 0;
+      for (let i = 0; i < s.length; i++) {
+        h = ((h << 5) - h) + s.charCodeAt(i);
+        h |= 0;
+      }
+      return Math.abs(h).toString(16);
+    }
+
+    let ical = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Cultura CDMX//Eventos//ES",
+      "CALSCALE:GREGORIAN",
+      "METHOD:PUBLISH",
+      "X-WR-CALNAME:Eventos Culturales CDMX",
+      "X-WR-TIMEZONE:America/Mexico_City"
+    ];
+
+    for (const e of events) {
+      const uid = hashCode((e.detail_url || "") + (e.fecha_iso || "")) + "@cultura-cdmx";
+      const summary = escapeIcal(e.evento || "Evento");
+      const location = escapeIcal(e.location || "");
+      const description = escapeIcal(
+        (e.descripcion || "") + (e.info_text ? "\n\n" + e.info_text : "")
+      );
+      const url = e.detail_url || "";
+
+      let dtstart, dtend;
+      if (e.fecha_iso && e.hora) {
+        const [yr, mo, dy] = e.fecha_iso.split("-");
+        const [hh, mm] = (e.hora || "00:00").split(":");
+        const startH = parseInt(hh) || 0;
+        const startM = parseInt(mm) || 0;
+        const endH = startH + 1;
+        dtstart = `DTSTART;TZID=America/Mexico_City:${yr}${mo}${dy}T${String(startH).padStart(2,"0")}${String(startM).padStart(2,"0")}00`;
+        dtend = `DTEND;TZID=America/Mexico_City:${yr}${mo}${dy}T${String(endH).padStart(2,"0")}${String(startM).padStart(2,"0")}00`;
+      } else if (e.fecha_iso) {
+        const [yr, mo, dy] = e.fecha_iso.split("-");
+        dtstart = `DTSTART;VALUE=DATE:${yr}${mo}${dy}`;
+        dtend = `DTEND;VALUE=DATE:${yr}${mo}${dy}`;
+      } else {
+        continue;
+      }
+
+      ical.push("BEGIN:VEVENT");
+      ical.push(`UID:${uid}`);
+      ical.push(`DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").split(".")[0]}Z`);
+      ical.push(dtstart);
+      ical.push(dtend);
+      ical.push(`SUMMARY:${summary}`);
+      if (location) ical.push(`LOCATION:${location}`);
+      if (description) ical.push(`DESCRIPTION:${description}`);
+      if (url) ical.push(`URL:${url}`);
+      ical.push("END:VEVENT");
+    }
+
+    ical.push("END:VCALENDAR");
+    const icalString = ical.join("\r\n");
+
+    // Expose for testing
+    window.__lastIcalString = icalString;
+
+    // Trigger download
+    const blob = new Blob([icalString], { type: "text/calendar;charset=utf-8" });
+    const url2 = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url2;
+    a.download = "eventos-cdmx.ics";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url2);
+  }
+
+  const badge = htl.html`<div class="selected-count"></div>`;
+  const btn = htl.html`<button class="export-btn" style="display:none" onclick=${generateICal}>📅 Exportar a iCal</button>`;
+
+  return htl.html`<div class="selection-widget">${badge}${btn}</div>`;
+}
+```
+
+```{ojs}
 htl.html`<div class="event-count">${filtered.length} evento${filtered.length !== 1 ? "s" : ""} encontrado${filtered.length !== 1 ? "s" : ""}</div>`
 ```
 
 # Eventos Culturales CDMX
 
 ```{ojs}
-// ── 6. Table with poster images ──────────────────────────────────────────────
+// ── 6. Table with poster images (no checkboxes - selection via separate mechanism) ──
 eventsTable = {
-  const rows = filtered.map(e => {
+  const rows = filtered.map((e, idx) => {
     const poster = (e.banner_url && e.detail_url)
       ? htl.html`<a href="${e.detail_url}" target="_blank"><img src="${e.banner_url}" class="event-poster" loading="lazy"></a>`
       : "";
@@ -281,7 +380,8 @@ eventsTable = {
       ? htl.html`<a href="${e.detail_url}" target="_blank" class="ver-link">Ver →</a>`
       : "";
     const infoHtml = (e.info_text || "").replace(/\s*\|\s*/g, "<br>");
-    return htl.html`<tr>
+    return htl.html`<tr data-idx="${idx}">
+      <td class="col-check"><input type="checkbox" data-idx="${idx}"></td>
       <td class="col-poster">${poster}</td>
       <td class="col-evento">${e.evento || ""}</td>
       <td class="col-fecha">${e.fecha_iso ? e.fecha_iso.split("-").reverse().join("/") : ""}</td>
@@ -293,9 +393,18 @@ eventsTable = {
     </tr>`;
   });
 
-  return htl.html`<div class="table-wrapper">
+  // Store filtered data globally for iCal export
+  window.__eventSelection = window.__eventSelection || { selected: new Set(), lastLen: 0, filtered: [] };
+  if (filtered.length !== window.__eventSelection.lastLen) {
+    window.__eventSelection.selected = new Set();
+    window.__eventSelection.lastLen = filtered.length;
+  }
+  window.__eventSelection.filtered = filtered;
+
+  const table = htl.html`<div class="table-wrapper">
     <table id="events-table">
       <thead><tr>
+        <th class="col-check"><input type="checkbox" id="master-checkbox"></th>
         <th>Poster</th>
         <th>Evento</th>
         <th>Fecha</th>
@@ -308,5 +417,61 @@ eventsTable = {
       <tbody>${rows}</tbody>
     </table>
   </div>`;
+
+  // Attach event handlers after DOM insertion
+  setTimeout(() => {
+    const state = window.__eventSelection;
+    
+    function updateUI() {
+      const count = state.selected.size;
+      const badge = document.querySelector(".selected-count");
+      const btn = document.querySelector(".export-btn");
+      if (badge) badge.textContent = count > 0 ? `${count} evento${count !== 1 ? "s" : ""} seleccionado${count !== 1 ? "s" : ""}` : "";
+      if (btn) btn.style.display = count > 0 ? "block" : "none";
+      if (btn) btn.textContent = `📅 Exportar a iCal (${count})`;
+      
+      const master = document.getElementById("master-checkbox");
+      if (master) master.checked = count === state.lastLen && state.lastLen > 0;
+    }
+
+    // Row checkbox handlers
+    document.querySelectorAll("#events-table tbody input[type=checkbox]").forEach(cb => {
+      cb.addEventListener("change", function() {
+        const idx = parseInt(this.dataset.idx);
+        if (this.checked) state.selected.add(idx);
+        else state.selected.delete(idx);
+        this.closest("tr").classList.toggle("row-selected", this.checked);
+        updateUI();
+      });
+    });
+
+    // Row click handler
+    document.querySelectorAll("#events-table tbody tr").forEach(tr => {
+      tr.addEventListener("click", function(ev) {
+        if (ev.target.tagName === "INPUT" || ev.target.tagName === "A" || ev.target.closest("a")) return;
+        const cb = this.querySelector("input[type=checkbox]");
+        cb.checked = !cb.checked;
+        cb.dispatchEvent(new Event("change"));
+      });
+    });
+
+    // Master checkbox handler
+    const master = document.getElementById("master-checkbox");
+    if (master) {
+      master.addEventListener("change", function() {
+        const checked = this.checked;
+        state.selected = checked ? new Set([...Array(state.lastLen).keys()]) : new Set();
+        document.querySelectorAll("#events-table tbody input[type=checkbox]").forEach(cb => {
+          cb.checked = checked;
+          cb.closest("tr").classList.toggle("row-selected", checked);
+        });
+        updateUI();
+      });
+    }
+
+    updateUI();
+  }, 0);
+
+  return table;
 }
 ```

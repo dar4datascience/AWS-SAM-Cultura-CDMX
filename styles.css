@@ -228,9 +228,74 @@
   box-shadow: 0 0 0 0.15rem rgba(42,159,214,0.25) !important;
 }
 
+/* ── Checkbox column ───────────────────────────────────────── */
+.col-check {
+  width: 32px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.col-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #2a9fd6;
+}
+
+#events-table th.col-check {
+  padding: 0.55rem 0.3rem;
+}
+
+/* ── Selected row highlight ────────────────────────────────── */
+#events-table tbody tr.row-selected {
+  background: rgba(42, 159, 214, 0.12) !important;
+}
+
+#events-table tbody tr.row-selected:hover {
+  background: rgba(42, 159, 214, 0.18) !important;
+}
+
+/* ── Selection widget (counter + export button) ────────────── */
+.selection-widget {
+  margin-top: 0.5rem;
+}
+
+.selected-count {
+  font-size: 0.8rem;
+  color: #2a9fd6;
+  font-weight: 600;
+  text-align: center;
+  padding: 0.25rem 0;
+}
+
+.export-btn {
+  display: block;
+  width: 100%;
+  margin-top: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #2a9fd6;
+  border-radius: 5px;
+  background: #2a9fd6;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.export-btn:hover {
+  background: #1e8bc3;
+  border-color: #1e8bc3;
+}
+
+.export-btn:active {
+  background: #1a7aad;
+}
+
 /* ── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .col-info, .col-location { display: none; }
   .col-poster { width: 80px; }
   .col-evento { width: 140px; }
+  .col-check { width: 28px; }
 }
