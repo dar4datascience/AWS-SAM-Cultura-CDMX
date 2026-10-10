@@ -1,6 +1,5 @@
 import os
 import json
-import gzip
 import base64
 import hashlib
 from urllib.parse import urlparse
@@ -28,7 +27,7 @@ EVENTS_JSON_COLUMNS = """{
     'location': 'VARCHAR', 'banner_url': 'VARCHAR', 'evento': 'VARCHAR', 'recinto': 'VARCHAR',
     'event_id': 'VARCHAR', 'event_type': 'VARCHAR', 'fecha_iso': 'VARCHAR',
     'lat': 'DOUBLE', 'lon': 'DOUBLE', 'venue_id': 'VARCHAR', 'event_url': 'VARCHAR',
-    'costs': 'VARCHAR[]', 'all_dates': 'VARCHAR[]'
+    'costs': 'VARCHAR[]', 'all_dates': 'VARCHAR[]', 'sessions': 'VARCHAR[]'
 }"""
 
 
@@ -66,13 +65,14 @@ def upload_to_github(file_path, repo_owner, repo_name, target_path, commit_messa
     print(f"[DEBUG] Uploading {file_path} to GitHub repo {repo_owner}/{repo_name} at {target_path}")
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{target_path}"
 
-    # Compress the file before encoding (deterministic gzip so identical
-    # content always produces identical bytes and thus the same git blob SHA)
+    # Upload the raw Parquet bytes (the dashboard reads the file directly).
+    # DuckDB output is deterministic for identical input, so the blob SHA
+    # doubles as a content equality check.
     with open(file_path, "rb") as f:
-        gz_content = gzip.compress(f.read(), mtime=0)
+        content = f.read()
 
-    encoded_content = base64.b64encode(gz_content).decode("utf-8")
-    blob_sha = git_blob_sha(gz_content)
+    encoded_content = base64.b64encode(content).decode("utf-8")
+    blob_sha = git_blob_sha(content)
 
     headers = {
         "Authorization": f"Bearer {github_token}",

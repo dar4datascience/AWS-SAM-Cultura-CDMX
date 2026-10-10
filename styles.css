@@ -626,3 +626,68 @@
     background: #222;
   }
 }
+
+/* ── Sidebar filter widgets (tipos checkbox, gratis toggle) ── */
+.dashboard-sidebar form label {
+  color: #adafae;
+  font-size: 0.82rem;
+}
+
+/* ── iCal "incluir todas las fechas" row ───────────────────── */
+.ical-all-dates-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+.ical-all-dates-row input[type="checkbox"] {
+  accent-color: #2a9fd6;
+  cursor: pointer;
+}
+.ical-all-dates-row label {
+  font-size: 0.75rem;
+  color: #888;
+  cursor: pointer;
+}
+
+/* ── Mapa page (Leaflet) ───────────────────────────────────── */
+.map-container {
+  height: calc(100vh - 120px);
+  min-height: 320px;
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid #2a2a2a;
+  background: #111;
+}
+
+.leaflet-container {
+  font: inherit;
+}
+
+/* Popups are white-on-dark otherwise; keep them readable */
+.map-popup {
+  color: #1a1a1a;
+  font-size: 0.82rem;
+  max-width: 240px;
+}
+.map-popup strong {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+.map-popup-list {
+  margin: 0;
+  padding-left: 1rem;
+}
+.map-popup-list li {
+  margin: 0.15rem 0;
+}
+.map-popup-list a {
+  color: #1e8bc3;
+}
+.map-popup-more {
+  color: #555;
+  font-style: italic;
+  list-style: none;
+  margin-left: -1rem;
+}

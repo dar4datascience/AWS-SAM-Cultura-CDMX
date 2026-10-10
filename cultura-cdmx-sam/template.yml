@@ -61,6 +61,7 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref CulturaBucket
+          CACHE_TTL_DAYS: "3"
       Role: !GetAtt CarteleraScrapeRole.Arn
     Tags:
       Project: Cultura
@@ -87,7 +88,13 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:PutObject
+                  - s3:GetObject
                 Resource: !Sub "${CulturaBucket.Arn}/*"
+              # ListBucket so a missing cache key surfaces as 404, not 403
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt CulturaBucket.Arn
 
   # --------------------------
   # S3 Bucket

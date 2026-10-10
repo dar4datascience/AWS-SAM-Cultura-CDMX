@@ -1,8 +1,14 @@
 name: "Deploy Quarto site to GitHub Pages"
 
 on:
-  schedule:
-    - cron: "0 13 * * *"  # 7AM MX (UTC−6)
+  push:
+    branches: [main]
+    paths:
+      - 'data/**'
+      - 'index.qmd'
+      - 'styles.css'
+      - '_quarto.yml'
+      - '.github/workflows/deploy-quarto.yaml'
   workflow_dispatch:      # Allow manual trigger
 
 

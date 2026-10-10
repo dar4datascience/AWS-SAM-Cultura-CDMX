@@ -24,6 +24,7 @@ sys.path.insert(0, str(CARTELERA_DIR))
 sys.path.insert(0, str(REPO_ROOT / "cultura-cdmx-sam" / "duckdb_handler"))
 
 import app as duckdb_handler  # noqa: E402
+import cache as detail_cache  # noqa: E402
 import client  # noqa: E402
 import parse  # noqa: E402
 import scrape  # noqa: E402
@@ -38,6 +39,17 @@ def main() -> int:
         default=None,
         help="limit listing pages fetched (default: all pages)",
     )
+    parser.add_argument(
+        "--cache",
+        default=None,
+        help="optional local JSON cache file for event_info payloads",
+    )
+    parser.add_argument(
+        "--cache-ttl-days",
+        type=int,
+        default=detail_cache.DEFAULT_TTL_DAYS,
+        help="days a cached detail payload stays fresh (default: 3)",
+    )
     args = parser.parse_args()
 
     out_path = Path(args.out).expanduser().resolve()
@@ -46,15 +58,25 @@ def main() -> int:
     session = client.make_session()
     today = parse.mexico_today()
 
+    cache_entries = {}
+    if args.cache:
+        cache_entries = detail_cache.load_cache_file(args.cache)
+        print(f"Cache: {args.cache}  ({len(cache_entries)} entries loaded)")
+
     started_at = time.time()
-    records, failed_count = scrape.scrape_events(
-        session, today, max_pages=args.max_pages
+    records, failed_count, new_cache_entries, stats = scrape.scrape_events(
+        session, today, max_pages=args.max_pages,
+        cache_entries=cache_entries, ttl_days=args.cache_ttl_days,
     )
     elapsed = time.time() - started_at
 
     out_path.write_text(
         json.dumps(records, ensure_ascii=False), encoding="utf-8"
     )
+
+    if args.cache:
+        detail_cache.save_cache_file(args.cache, new_cache_entries)
+        print(f"Cache saved: {args.cache}  ({len(new_cache_entries)} entries)")
 
     import duckdb
 
@@ -69,6 +91,10 @@ def main() -> int:
     ).fetchall()
 
     print(f"\nRecords: {len(records)}  failed: {failed_count}  wall time: {elapsed:.1f}s")
+    print(
+        f"Stats: fetched={stats['fetched']}  cache_hits={stats['cache_hits']}  "
+        f"stale_fallback={stats['stale_fallback']}  failed={stats['failed']}"
+    )
     print(f"JSON:    {out_path}")
     print(f"Parquet: {parquet_path}  rows: {row_count}")
     print("\nSchema:")

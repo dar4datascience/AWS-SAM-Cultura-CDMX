@@ -96,5 +96,57 @@ def test_build_record_failure_shape():
     assert record["event_type"] == item["event_type"]
 
     for key in ("description", "info", "schedule", "location", "banner_url",
-                "venue_id", "event_url", "costs", "all_dates"):
+                "venue_id", "event_url", "costs", "all_dates", "sessions"):
         assert record[key] is None, key
+
+
+def _info_with_schedule(schedule):
+    return {
+        "event_name": "Ev",
+        "event_description": "<p>d</p>",
+        "event_duration": "01:00",
+        "event_audience": "Todas",
+        "event_accesibility": "",
+        "event_entity": "Ent",
+        "event_location": {"lat": "19.4", "lng": "-99.1", "address": "Calle"},
+        "event_image": "https://img",
+        "venue_id_id": "1",
+        "venue_name": "Rec",
+        "event_url": "https://ev",
+        "costs": {},
+        "schedule": schedule,
+    }
+
+
+def test_sessions_multiple_hours():
+    info = _info_with_schedule({"1": {"event_dates": ["09/10/2026"], "event_hours": ["11:00", "19:30"]}})
+    rec = parse.build_record(_fixture_listing_item(0), info, 1, 0, today=date(2026, 10, 9))
+    assert rec["sessions"] == ["2026-10-09 11:00", "2026-10-09 19:30"]
+
+
+def test_sessions_exclude_past_dates():
+    info = _info_with_schedule({"1": {"event_dates": ["01/10/2026", "09/10/2026"], "event_hours": ["11:00"]}})
+    rec = parse.build_record(_fixture_listing_item(0), info, 1, 0, today=date(2026, 10, 9))
+    assert rec["sessions"] == ["2026-10-09 11:00"]
+
+
+def test_sessions_no_hours_date_only():
+    info = _info_with_schedule({"1": {"event_dates": ["09/10/2026"], "event_hours": []}})
+    rec = parse.build_record(_fixture_listing_item(0), info, 1, 0, today=date(2026, 10, 9))
+    assert rec["sessions"] == ["2026-10-09"]
+
+
+def test_sessions_deduped_and_sorted_across_entries():
+    info = _info_with_schedule({
+        "1": {"event_dates": ["10/10/2026"], "event_hours": ["12:00"]},
+        "2": {"event_dates": ["09/10/2026", "10/10/2026"], "event_hours": ["12:00"]},
+    })
+    rec = parse.build_record(_fixture_listing_item(0), info, 1, 0, today=date(2026, 10, 9))
+    assert rec["sessions"] == ["2026-10-09 12:00", "2026-10-10 12:00"]
+
+
+def test_sessions_fixture_has_all_three_dates():
+    rec = parse.build_record(
+        _fixture_listing_item(0), _fixture_event_info(), 1, 0, today=date(2026, 10, 9)
+    )
+    assert rec["sessions"] == ["2026-10-15 11:00", "2026-10-22 11:00", "2026-10-29 11:00"]

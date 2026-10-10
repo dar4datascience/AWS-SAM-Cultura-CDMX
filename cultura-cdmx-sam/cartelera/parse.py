@@ -113,6 +113,26 @@ def all_future_dates(schedule_map, today: date) -> list:
     return [d.isoformat() for d in sorted(dates)]
 
 
+def all_sessions(schedule_map, today: date) -> list:
+    """Sorted, deduped 'YYYY-MM-DD HH:MM' for every (date >= today, hour);
+    schedule entries without hours contribute the bare date."""
+    sessions = set()
+    for entry in (schedule_map or {}).values():
+        if not isinstance(entry, dict):
+            continue
+        hours = [h for h in (entry.get("event_hours") or []) if h]
+        for raw in entry.get("event_dates") or []:
+            d = _parse_day(raw)
+            if d is None or d < today:
+                continue
+            if hours:
+                for hour in hours:
+                    sessions.add(f"{d.isoformat()} {hour}")
+            else:
+                sessions.add(d.isoformat())
+    return sorted(sessions)
+
+
 def build_record(listing_item: dict, event_info, page_number: int, card_index: int, today: date) -> dict:
     """Build one output record. Pass event_info=None to emit a failure record
     (listing-derived fields filled, detail-derived fields null)."""
@@ -140,6 +160,7 @@ def build_record(listing_item: dict, event_info, page_number: int, card_index: i
         "event_url": None,
         "costs": None,
         "all_dates": None,
+        "sessions": None,
     }
     if not event_info:
         return record
@@ -162,6 +183,7 @@ def build_record(listing_item: dict, event_info, page_number: int, card_index: i
             "event_url": event_info.get("event_url"),
             "costs": costs,
             "all_dates": all_future_dates(event_info.get("schedule"), today),
+            "sessions": all_sessions(event_info.get("schedule"), today),
         }
     )
     return record

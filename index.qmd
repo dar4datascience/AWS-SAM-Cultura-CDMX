@@ -14,42 +14,105 @@ execute:
 ```{python}
 #| output: false
 import gzip
-import shutil
-import urllib.request
-import tempfile
-import duckdb
 import json
+import os
+import shutil
+import tempfile
+import urllib.request
 
-url = "https://cdn.jsdelivr.net/gh/dar4datascience/AWS-SAM-Cultura-CDMX@main/data/scraped_data_cultura_cartelera_cdmx.parquet"
+import duckdb
+import pandas as pd
 
-# Download and decompress the parquet
-with urllib.request.urlopen(url) as response:
+DATA_URL = "https://raw.githubusercontent.com/dar4datascience/AWS-SAM-Cultura-CDMX/main/data/scraped_data_cultura_cartelera_cdmx.parquet"
+LOCAL_PARQUET = "data/scraped_data_cultura_cartelera_cdmx.parquet"
+
+# Resolve the parquet source: env override, repo-local file, else download.
+env_path = os.environ.get("CARTELERA_PARQUET")
+if env_path:
+    source_path = env_path
+elif os.path.exists(LOCAL_PARQUET):
+    source_path = LOCAL_PARQUET
+else:
+    with urllib.request.urlopen(DATA_URL) as response, \
+         tempfile.NamedTemporaryFile(delete=False, suffix=".parquet") as tmp_file:
+        shutil.copyfileobj(response, tmp_file)
+        source_path = tmp_file.name
+
+# Older snapshots are gzip-wrapped; newer ones are plain Parquet bytes.
+parquet_path = source_path
+with open(source_path, "rb") as f:
+    is_gzip = f.read(2) == b"\x1f\x8b"
+if is_gzip:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".parquet") as tmp_parquet:
-        with gzip.GzipFile(fileobj=response) as unzipped:
+        with open(source_path, "rb") as src, gzip.GzipFile(fileobj=src) as unzipped:
             shutil.copyfileobj(unzipped, tmp_parquet)
         parquet_path = tmp_parquet.name
 
-# Query decompressed file using DuckDB
+# SELECT * keeps every column; ORDER BY schedule.date preserves the
+# historical ordering semantics.
 con = duckdb.connect()
 df = con.execute(f"""
-  SELECT
-    evento,
-    recinto,
-    schedule.date  AS fecha_raw,
-    schedule.hour  AS hora,
-    location,
-    banner_url,
-    detail_url,
-    list_aggregate(description, 'string_agg', ' ')   AS descripcion,
-    list_aggregate(info,        'string_agg', ' | ') AS info_text
+  SELECT *
   FROM read_parquet('{parquet_path}')
   ORDER BY schedule.date
 """).df()
 
-df = df.fillna("")
+
+def _as_list(value):
+    """DuckDB list columns arrive as numpy arrays; normalize to py lists."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    try:
+        return list(value)
+    except TypeError:
+        return []
+
+
+def _txt(value):
+    return "" if value is None or (not isinstance(value, str) and pd.isna(value)) else str(value)
+
+
+def _float_or_none(value):
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f else None  # NaN -> None
+
+
+events = []
+for row in df.to_dict(orient="records"):
+    sched = row.get("schedule")
+    sched = sched if isinstance(sched, dict) else {}
+    description = _as_list(row.get("description"))
+    info = _as_list(row.get("info"))
+    costs = _as_list(row.get("costs"))
+    costs_lower = " | ".join(str(c) for c in costs).lower()
+    is_free = any(
+        keyword in costs_lower
+        for keyword in ("gratuit", "gratis", "entrada libre")
+    )
+    events.append({
+        "evento": _txt(row.get("evento")),
+        "recinto": _txt(row.get("recinto")),
+        "fecha_raw": _txt(sched.get("date")),
+        "hora": _txt(sched.get("hour")),
+        "location": _txt(row.get("location")),
+        "banner_url": _txt(row.get("banner_url")),
+        "detail_url": _txt(row.get("detail_url")),
+        "descripcion": " ".join(str(d) for d in description),
+        "info_text": " | ".join(str(i) for i in info),
+        "event_type": _txt(row.get("event_type")),
+        "lat": _float_or_none(row.get("lat")),
+        "lon": _float_or_none(row.get("lon")),
+        "costs_text": " | ".join(str(c) for c in costs),
+        "is_free": is_free,
+        "sessions": _as_list(row.get("sessions")),
+    })
 
 # Serialize to events.json so Quarto OJS can bundle it as a FileAttachment
-events = df.to_dict(orient="records")
 with open("events.json", "w", encoding="utf-8") as f:
     json.dump(events, f, ensure_ascii=False)
 ```
@@ -80,6 +143,9 @@ allEvents = {
 // Sorted unique ISO dates that have events (for calendar dots)
 eventDates = new Set(allEvents.map(e => e.fecha_iso).filter(Boolean))
 
+// Sorted unique event types for the sidebar checkbox filter
+tiposDisponibles = [...new Set(allEvents.map(e => e.event_type).filter(Boolean))].sort()
+
 // ── 2. Mutable state for calendar ────────────────────────────────────────────
 // Helper: get current week (Mon-Sun)
 currentWeek = {
@@ -109,6 +175,8 @@ filtered = {
       const hay = `${e.evento||""} ${e.recinto||""} ${e.descripcion||""} ${e.info_text||""} ${e.location||""}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
+    if (tipos.length > 0 && !tipos.includes(e.event_type)) return false;
+    if (soloGratis && !e.is_free) return false;
     if (calMode === "range" && (rangeStart || rangeEnd)) {
       const d = e.fecha_iso;
       if (!d) return false;
@@ -133,6 +201,13 @@ viewof searchText = Inputs.text({
   placeholder: "Buscar evento o recinto…",
   width: "100%"
 })
+```
+
+```{ojs}
+// ── 4b. Event type & free filters ────────────────────────────────────────────
+viewof tipos = Inputs.checkbox(tiposDisponibles, {label: "Tipo de evento"})
+
+viewof soloGratis = Inputs.toggle({label: "Solo gratuitos"})
 ```
 
 ---
@@ -301,41 +376,66 @@ selectionWidget = {
     ];
 
     for (const e of events) {
-      const uid = hashCode((e.detail_url || "") + (e.fecha_iso || "")) + "@cultura-cdmx";
-      const summary = escapeIcal(e.evento || "Evento");
-      const location = escapeIcal(e.location || "");
-      const description = escapeIcal(
-        (e.descripcion || "") + (e.info_text ? "\n\n" + e.info_text : "")
-      );
-      const url = e.detail_url || "";
+      // With "Incluir todas las fechas" checked and sessions present, emit one
+      // VEVENT per session; otherwise fall back to the single displayed date.
+      const sessionList =
+        allDatesCheckbox.checked && Array.isArray(e.sessions) && e.sessions.length
+          ? e.sessions
+          : [null];
 
-      let dtstart, dtend;
-      if (e.fecha_iso && e.hora) {
-        const [yr, mo, dy] = e.fecha_iso.split("-");
-        const [hh, mm] = (e.hora || "00:00").split(":");
-        const startH = parseInt(hh) || 0;
-        const startM = parseInt(mm) || 0;
-        const endH = startH + 1;
-        dtstart = `DTSTART;TZID=America/Mexico_City:${yr}${mo}${dy}T${String(startH).padStart(2,"0")}${String(startM).padStart(2,"0")}00`;
-        dtend = `DTEND;TZID=America/Mexico_City:${yr}${mo}${dy}T${String(endH).padStart(2,"0")}${String(startM).padStart(2,"0")}00`;
-      } else if (e.fecha_iso) {
-        const [yr, mo, dy] = e.fecha_iso.split("-");
-        dtstart = `DTSTART;VALUE=DATE:${yr}${mo}${dy}`;
-        dtend = `DTEND;VALUE=DATE:${yr}${mo}${dy}`;
-      } else {
-        continue;
+      for (const sess of sessionList) {
+        const uid = sess
+          ? hashCode((e.detail_url || "") + sess) + "@cultura-cdmx"
+          : hashCode((e.detail_url || "") + (e.fecha_iso || "")) + "@cultura-cdmx";
+        const summary = escapeIcal(e.evento || "Evento");
+        const location = escapeIcal(e.location || "");
+        const description = escapeIcal(
+          (e.descripcion || "") + (e.info_text ? "\n\n" + e.info_text : "")
+        );
+        const url = e.detail_url || "";
+
+        let dtstart, dtend;
+        if (sess) {
+          const [d, t] = sess.split(" ");
+          const [yr, mo, dy] = d.split("-");
+          if (t) {
+            const [hh, mm] = t.split(":");
+            const startH = parseInt(hh) || 0;
+            const startM = parseInt(mm) || 0;
+            const endH = startH + 1;
+            dtstart = `DTSTART;TZID=America/Mexico_City:${yr}${mo}${dy}T${String(startH).padStart(2,"0")}${String(startM).padStart(2,"0")}00`;
+            dtend = `DTEND;TZID=America/Mexico_City:${yr}${mo}${dy}T${String(endH).padStart(2,"0")}${String(startM).padStart(2,"0")}00`;
+          } else {
+            dtstart = `DTSTART;VALUE=DATE:${yr}${mo}${dy}`;
+            dtend = `DTEND;VALUE=DATE:${yr}${mo}${dy}`;
+          }
+        } else if (e.fecha_iso && e.hora) {
+          const [yr, mo, dy] = e.fecha_iso.split("-");
+          const [hh, mm] = (e.hora || "00:00").split(":");
+          const startH = parseInt(hh) || 0;
+          const startM = parseInt(mm) || 0;
+          const endH = startH + 1;
+          dtstart = `DTSTART;TZID=America/Mexico_City:${yr}${mo}${dy}T${String(startH).padStart(2,"0")}${String(startM).padStart(2,"0")}00`;
+          dtend = `DTEND;TZID=America/Mexico_City:${yr}${mo}${dy}T${String(endH).padStart(2,"0")}${String(startM).padStart(2,"0")}00`;
+        } else if (e.fecha_iso) {
+          const [yr, mo, dy] = e.fecha_iso.split("-");
+          dtstart = `DTSTART;VALUE=DATE:${yr}${mo}${dy}`;
+          dtend = `DTEND;VALUE=DATE:${yr}${mo}${dy}`;
+        } else {
+          continue;
+        }
+
+        ical.push("BEGIN:VEVENT");
+        ical.push(`UID:${uid}`);
+        ical.push(`DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").split(".")[0]}Z`);
+        ical.push(dtstart);
+        ical.push(dtend);
+        ical.push(`SUMMARY:${summary}`);
+        if (location) ical.push(`LOCATION:${location}`);
+        if (description) ical.push(`DESCRIPTION:${description}`);
+        if (url) ical.push(`URL:${url}`);
+        ical.push("END:VEVENT");
       }
-
-      ical.push("BEGIN:VEVENT");
-      ical.push(`UID:${uid}`);
-      ical.push(`DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").split(".")[0]}Z`);
-      ical.push(dtstart);
-      ical.push(dtend);
-      ical.push(`SUMMARY:${summary}`);
-      if (location) ical.push(`LOCATION:${location}`);
-      if (description) ical.push(`DESCRIPTION:${description}`);
-      if (url) ical.push(`URL:${url}`);
-      ical.push("END:VEVENT");
     }
 
     ical.push("END:VCALENDAR");
@@ -357,9 +457,11 @@ selectionWidget = {
   }
 
   const badge = htl.html`<div class="selected-count"></div>`;
+  const allDatesCheckbox = htl.html`<input type="checkbox" id="ical-all-dates">`;
+  const allDatesRow = htl.html`<div class="ical-all-dates-row">${allDatesCheckbox}<label for="ical-all-dates">Incluir todas las fechas</label></div>`;
   const btn = htl.html`<button class="export-btn" style="display:none" onclick=${generateICal}>📅 Exportar a iCal</button>`;
 
-  return htl.html`<div class="selection-widget">${badge}${btn}</div>`;
+  return htl.html`<div class="selection-widget">${badge}${allDatesRow}${btn}</div>`;
 }
 ```
 
@@ -501,5 +603,95 @@ eventsTable = {
   }, 0);
 
   return table;
+}
+```
+
+# Mapa
+
+```{ojs}
+// ── 7. Leaflet map (library + stylesheet injected once) ──────────────────────
+L = require("leaflet@1.9.4")
+```
+
+```{ojs}
+mapContainer = {
+  if (!document.getElementById("leaflet-css")) {
+    const link = document.createElement("link");
+    link.id = "leaflet-css";
+    link.rel = "stylesheet";
+    link.href = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css";
+    document.head.appendChild(link);
+  }
+  const div = htl.html`<div class="map-container"></div>`;
+  const map = L.map(div).setView([19.4326, -99.1332], 11);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap contributors",
+    maxZoom: 19
+  }).addTo(map);
+  const markersLayer = L.layerGroup().addTo(map);
+  div._map = map;
+  div._markersLayer = markersLayer;
+  // The map starts on a hidden page; recompute its size whenever it resizes.
+  new ResizeObserver(() => map.invalidateSize()).observe(div);
+  return div;
+}
+```
+
+```{ojs}
+// ── 8. Markers, rebuilt from `filtered` without recreating the map ───────────
+mapMarkers = {
+  mapContainer;
+  const map = mapContainer._map;
+  const layer = mapContainer._markersLayer;
+  layer.clearLayers();
+
+  // One marker per venue: group filtered events by identical coordinates.
+  const groups = new Map();
+  for (const e of filtered) {
+    if (typeof e.lat !== "number" || typeof e.lon !== "number") continue;
+    const key = `${e.lat},${e.lon}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(e);
+  }
+
+  const latLngs = [];
+  for (const evs of groups.values()) {
+    const popup = document.createElement("div");
+    popup.className = "map-popup";
+    const title = document.createElement("strong");
+    title.textContent = evs[0].recinto || "Sin recinto";
+    popup.appendChild(title);
+    const ul = document.createElement("ul");
+    ul.className = "map-popup-list";
+    for (const e of evs.slice(0, 10)) {
+      const li = document.createElement("li");
+      const a = document.createElement("a");
+      a.href = e.detail_url || "#";
+      a.target = "_blank";
+      a.rel = "noopener";
+      const fecha = e.fecha_iso ? e.fecha_iso.split("-").reverse().join("/") : "";
+      a.textContent = [e.evento || "Evento", fecha, e.hora].filter(Boolean).join(" – ");
+      li.appendChild(a);
+      ul.appendChild(li);
+    }
+    if (evs.length > 10) {
+      const more = document.createElement("li");
+      more.className = "map-popup-more";
+      more.textContent = `+${evs.length - 10} más`;
+      ul.appendChild(more);
+    }
+    popup.appendChild(ul);
+    const marker = L.marker([evs[0].lat, evs[0].lon]);
+    marker.bindPopup(popup);
+    marker.addTo(layer);
+    latLngs.push([evs[0].lat, evs[0].lon]);
+  }
+
+  if (latLngs.length) {
+    map.fitBounds(latLngs, { padding: [24, 24] });
+  } else {
+    map.setView([19.4326, -99.1332], 11);
+  }
+  return groups.size;
 }
 ```
