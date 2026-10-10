@@ -15,3 +15,6 @@ venv/
 **/*.quarto_ipynb
 
 _site/**
+
+__pycache__/
+.pytest_cache/
