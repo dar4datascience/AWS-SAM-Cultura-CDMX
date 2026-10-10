@@ -1,0 +1,43 @@
+{
+  "status": "OK",
+  "data": {
+    "event_data": {
+      "event_pages_total": 103,
+      "event_pages_current": "1",
+      "event_items_total": 920,
+      "event_items_list": [
+        {
+          "event_id": "41272",
+          "event_type": "Museos y Exposiciones",
+          "event_name": "Universidad de México +475 Años de concebir futuros.",
+          "event_venue": "Colegio de San Ildefonso",
+          "event_thumb": "https://cartelera.cdmx.gob.mx/wp-content/uploads/ae_usercontent/usercontent/41272.jpg",
+          "event_date_located": "09/10/2026",
+          "event_lat": "19.4356",
+          "event_lon": "-99.1306"
+        },
+        {
+          "event_id": "38630",
+          "event_type": "Conciertos",
+          "event_name": "Akira Yamaoka",
+          "event_venue": "Teatro Metropólitan",
+          "event_thumb": "https://cartelera.cdmx.gob.mx/wp-content/uploads/ae_usercontent/usercontent/6a304e39ed621-Akira-Yamaoka.jpg",
+          "event_date_located": "01/11/2026",
+          "event_lat": "19.4377",
+          "event_lon": "-99.1467"
+        },
+        {
+          "event_id": "40100",
+          "event_type": "Ferias y Festivales",
+          "event_name": "XXVI Feria Internacional del Libro del Zócalo 2026",
+          "event_venue": "Zócalo capitalino",
+          "event_thumb": "https://cartelera.cdmx.gob.mx/wp-content/uploads/ae_usercontent/usercontent/40100.jpg",
+          "event_date_located": "10/10/2026",
+          "event_lat": "19.4326",
+          "event_lon": "-99.1332"
+        }
+      ]
+    },
+    "venue_data": {}
+  }
+}
