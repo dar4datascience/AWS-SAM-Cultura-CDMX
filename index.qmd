@@ -609,6 +609,7 @@ eventsTable = {
 # Mapa
 
 ```{ojs}
+//| output: false
 // ── 7. Leaflet map (library + stylesheet injected once) ──────────────────────
 L = require("leaflet@1.9.4")
 ```
@@ -631,17 +632,26 @@ mapContainer = {
   const markersLayer = L.layerGroup().addTo(map);
   div._map = map;
   div._markersLayer = markersLayer;
-  // The map starts on a hidden page; recompute its size whenever it resizes.
-  new ResizeObserver(() => map.invalidateSize()).observe(div);
+  // The map starts on a hidden page; recompute its size whenever it resizes
+  // and fit the markers the first time it becomes visible.
+  div._fit = () => {
+    if (div._bounds && div._bounds.length) map.fitBounds(div._bounds, { padding: [24, 24], maxZoom: 15 });
+    else map.setView([19.4326, -99.1332], 11);
+  };
+  new ResizeObserver(() => {
+    if (!div.clientWidth || !div.clientHeight) { div._needsFit = true; return; }
+    map.invalidateSize();
+    if (div._needsFit) { div._needsFit = false; div._fit(); }
+  }).observe(div);
   return div;
 }
 ```
 
 ```{ojs}
+//| output: false
 // ── 8. Markers, rebuilt from `filtered` without recreating the map ───────────
 mapMarkers = {
   mapContainer;
-  const map = mapContainer._map;
   const layer = mapContainer._markersLayer;
   layer.clearLayers();
 
@@ -681,17 +691,21 @@ mapMarkers = {
       ul.appendChild(more);
     }
     popup.appendChild(ul);
-    const marker = L.marker([evs[0].lat, evs[0].lon]);
+    const marker = L.circleMarker([evs[0].lat, evs[0].lon], {
+      radius: Math.min(6 + evs.length, 16),
+      color: "#ffffff",
+      weight: 1.5,
+      fillColor: "#2a9fd6",
+      fillOpacity: 0.85
+    });
     marker.bindPopup(popup);
     marker.addTo(layer);
     latLngs.push([evs[0].lat, evs[0].lon]);
   }
 
-  if (latLngs.length) {
-    map.fitBounds(latLngs, { padding: [24, 24] });
-  } else {
-    map.setView([19.4326, -99.1332], 11);
-  }
+  mapContainer._bounds = latLngs;
+  if (mapContainer.clientWidth && mapContainer.clientHeight) mapContainer._fit();
+  else mapContainer._needsFit = true;
   return groups.size;
 }
 ```

@@ -653,7 +653,7 @@
 
 /* ── Mapa page (Leaflet) ───────────────────────────────────── */
 .map-container {
-  height: calc(100vh - 120px);
+  height: calc(100vh - 160px);
   min-height: 320px;
   width: 100%;
   border-radius: 6px;
