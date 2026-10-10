@@ -2,6 +2,7 @@ import os
 import json
 import gzip
 import base64
+import hashlib
 from urllib.parse import urlparse
 
 import duckdb
@@ -18,33 +19,60 @@ os.environ["DUCKDB_TMPDIR"] = "/tmp"
 print(f"[DEBUG] DUCKDB_HOME: {os.environ['DUCKDB_HOME']}")
 print(f"[DEBUG] DUCKDB_TMPDIR: {os.environ['DUCKDB_TMPDIR']}")
 
-def get_secret(secret_arn: str) -> str:
-    print(f"[DEBUG] Retrieving secret from ARN: {secret_arn}")
-    region_name = os.environ.get("AWS_REGION", "mx-central-1")
-    session = boto3.session.Session()
-    client = session.client("secretsmanager", region_name=region_name)
+# Explicit schema: auto-detection would turn "11:00" into TIME and dates into
+# DATE depending on each day's data, breaking the dashboard's JSON export.
+EVENTS_JSON_COLUMNS = """{
+    'page_number': 'BIGINT', 'card_index': 'BIGINT', 'detail_url': 'VARCHAR',
+    'description': 'VARCHAR[]', 'info': 'VARCHAR[]',
+    'schedule': 'STRUCT(date VARCHAR, hour VARCHAR)',
+    'location': 'VARCHAR', 'banner_url': 'VARCHAR', 'evento': 'VARCHAR', 'recinto': 'VARCHAR',
+    'event_id': 'VARCHAR', 'event_type': 'VARCHAR', 'fecha_iso': 'VARCHAR',
+    'lat': 'DOUBLE', 'lon': 'DOUBLE', 'venue_id': 'VARCHAR', 'event_url': 'VARCHAR',
+    'costs': 'VARCHAR[]', 'all_dates': 'VARCHAR[]'
+}"""
 
+
+def events_copy_sql(input_path: str, output_path: str) -> str:
+    return f"""
+        COPY (
+            SELECT *
+            FROM read_json('{input_path}', format = 'array', columns = {EVENTS_JSON_COLUMNS})
+        )
+        TO '{output_path}' (FORMAT 'PARQUET', COMPRESSION 'ZSTD');
+    """
+
+def get_github_token() -> str:
+    parameter_name = os.environ.get("GITHUB_TOKEN_PARAMETER")
+    if not parameter_name:
+        print("[ERROR] Missing GITHUB_TOKEN_PARAMETER environment variable")
+        raise RuntimeError("Missing GITHUB_TOKEN_PARAMETER environment variable.")
+    print(f"[DEBUG] Retrieving GitHub token from SSM parameter: {parameter_name}")
+    client = boto3.client("ssm")
     try:
-        response = client.get_secret_value(SecretId=secret_arn)
-        secret_str = response["SecretString"]
-        secret_dict = json.loads(secret_str)
-        token = secret_dict.get("token") or secret_dict.get("GITHUB_TOKEN") or secret_str
-        print("[DEBUG] Secret retrieved successfully")
-        return token
+        response = client.get_parameter(Name=parameter_name, WithDecryption=True)
+        print("[DEBUG] SSM parameter retrieved successfully")
+        return response["Parameter"]["Value"]
     except ClientError as e:
-        print(f"[ERROR] Failed to retrieve secret: {e}")
-        raise RuntimeError(f"Failed to retrieve GitHub secret: {e}")
+        print(f"[ERROR] Failed to retrieve SSM parameter: {e}")
+        raise RuntimeError(f"Failed to retrieve GitHub token parameter: {e}")
+
+
+def git_blob_sha(content: bytes) -> str:
+    """SHA-1 Git computes for a blob object: sha1('blob <len>\\0' + content)."""
+    return hashlib.sha1(b"blob %d\0" % len(content) + content).hexdigest()
 
 
 def upload_to_github(file_path, repo_owner, repo_name, target_path, commit_message, github_token):
     print(f"[DEBUG] Uploading {file_path} to GitHub repo {repo_owner}/{repo_name} at {target_path}")
     api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{target_path}"
 
-    # Compress the file before encoding
+    # Compress the file before encoding (deterministic gzip so identical
+    # content always produces identical bytes and thus the same git blob SHA)
     with open(file_path, "rb") as f:
-        gz_content = gzip.compress(f.read())
+        gz_content = gzip.compress(f.read(), mtime=0)
 
     encoded_content = base64.b64encode(gz_content).decode("utf-8")
+    blob_sha = git_blob_sha(gz_content)
 
     headers = {
         "Authorization": f"Bearer {github_token}",
@@ -56,10 +84,13 @@ def upload_to_github(file_path, repo_owner, repo_name, target_path, commit_messa
         "content": encoded_content
     }
 
-    # Check if file already exists to get SHA
+    # Check if file already exists to get SHA; skip the upload if unchanged
     response = requests.get(api_url, headers=headers)
     if response.status_code == 200:
         sha = response.json().get("sha")
+        if sha == blob_sha:
+            print("[DEBUG] Remote file is identical, skipping upload")
+            return {"skipped": True, "sha": sha}
         payload["sha"] = sha
         print(f"[DEBUG] File exists in repo, updating with SHA: {sha}")
     else:
@@ -109,20 +140,11 @@ def lambda_handler(event, context):
     s3_client = boto3.client("s3")
 
     try:
-        con.execute(f"""
-            COPY (
-                SELECT *
-                FROM read_json_auto('{input_path}')
-            )
-            TO '{output_path}' (FORMAT 'PARQUET', COMPRESSION 'ZSTD');
-        """)
+        con.execute(events_copy_sql(input_path, output_path))
         print("[DEBUG] DuckDB COPY completed successfully")
     except Exception as e:
         print(f"[ERROR] DuckDB COPY failed: {e}")
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": str(e)})
-        }
+        raise
 
     local_path = f"/tmp/scraped_data_cultura_cartelera_cdmx.parquet"
     print(f"[DEBUG] Downloading Parquet to local path: {local_path}")
@@ -133,12 +155,8 @@ def lambda_handler(event, context):
     repo_name = os.getenv("GITHUB_REPO")
     target_path = f"data/scraped_data_cultura_cartelera_cdmx.parquet"
     commit_message = f"Add scraped parquet for {snapshot_date}"
-    secret_arn = os.getenv("GITHUB_SECRET_ARN")
-    if not secret_arn:
-        print("[ERROR] Missing GITHUB_SECRET_ARN environment variable")
-        raise RuntimeError("Missing GITHUB_SECRET_ARN environment variable.")
 
-    github_token = get_secret(secret_arn)
+    github_token = get_github_token()
     upload_result = upload_to_github(
         file_path=local_path,
         repo_owner=repo_owner,
@@ -147,6 +165,16 @@ def lambda_handler(event, context):
         commit_message=commit_message,
         github_token=github_token
     )
+
+    if upload_result.get("skipped"):
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "message": "Parquet unchanged, GitHub upload skipped",
+                "skipped": True
+            }),
+            "skipped": True
+        }
 
     print(f"[DEBUG] Parquet uploaded to GitHub: {upload_result['content']['html_url']}")
 

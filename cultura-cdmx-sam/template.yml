@@ -1,33 +1,38 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Lambda with Playwright in a Docker container and Step Functions orchestration
+Description: Plain-HTTP cartelera.cdmx.gob.mx scraper with site health check and Step Functions orchestration
+
+Parameters:
+  NotificationEmail:
+    Type: String
+    Description: Email address that receives pipeline failure alerts via SNS
+  GithubTokenParameterName:
+    Type: String
+    Default: /cultura-cdmx/github-token
+    Description: SSM Parameter Store name holding the GitHub token (SecureString)
 
 Resources:
 
   # --------------------------
-  # Lambda: Check Last Page
+  # Lambda: Site Health Check
   # --------------------------
-  CulturaPageCheck:
+  SiteHealthCheckFunction:
     Type: AWS::Serverless::Function
     Properties:
-      PackageType: Image
-      Timeout: 90
-      MemorySize: 1536
-      EphemeralStorage:
-        Size: 1024
+      CodeUri: ./cartelera
+      Handler: health.lambda_handler
+      Runtime: python3.12
+      Timeout: 180
+      MemorySize: 256
       Architectures:
         - x86_64
-      Role: !GetAtt CulturaPageCheckRole.Arn
+      Role: !GetAtt SiteHealthCheckRole.Arn
     Tags:
       Project: Cultura
       Environment: Dev
       Type: SingleRun
-    Metadata:
-      Dockerfile: Dockerfile
-      DockerContext: ./cultura_check_page
-      DockerTag: playwright-pagecheck-v1
 
-  CulturaPageCheckRole:
+  SiteHealthCheckRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -41,33 +46,28 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
   # --------------------------
-  # Lambda: Scrape Cards
+  # Lambda: Scrape Cartelera
   # --------------------------
-  PlaywrightCardScrapper:
+  CarteleraScrapeFunction:
     Type: AWS::Serverless::Function
     Properties:
-      PackageType: Image
-      Timeout: 300 # 300 seconds
-      MemorySize: 3008  # For sequential scrapping
-      EphemeralStorage:
-        Size: 1024
+      CodeUri: ./cartelera
+      Handler: scrape.lambda_handler
+      Runtime: python3.12
+      Timeout: 600
+      MemorySize: 512
       Architectures:
         - x86_64
       Environment:
         Variables:
           BUCKET_NAME: !Ref CulturaBucket
-      Role: !GetAtt PlaywrightCardScrapperRole.Arn
+      Role: !GetAtt CarteleraScrapeRole.Arn
     Tags:
       Project: Cultura
       Environment: Dev
       Type: MultiRun
-    Metadata:
-      Dockerfile: Dockerfile
-      DockerContext: ./playwright_card_scrape
-      DockerTag: playwright-card-scraper-v1
 
-
-  PlaywrightCardScrapperRole:
+  CarteleraScrapeRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -87,7 +87,6 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:PutObject
-                  - s3:PutObjectAcl
                 Resource: !Sub "${CulturaBucket.Arn}/*"
 
   # --------------------------
@@ -107,6 +106,21 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+
+  # --------------------------
+  # SNS: Pipeline Alerts
+  # --------------------------
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: cultura-cartelera-alerts
+
+  AlertsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlertsTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
 
   # --------------------------
   # Lambda Layer: DuckDB
@@ -155,8 +169,8 @@ Resources:
                 Resource: !Sub "${CulturaBucket.Arn}/*"
               - Effect: Allow
                 Action:
-                  - secretsmanager:GetSecretValue
-                Resource: "*"
+                  - ssm:GetParameter
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${GithubTokenParameterName}"
 
 
 
@@ -179,8 +193,8 @@ Resources:
           BUCKET_NAME: !Ref CulturaBucket
           GITHUB_OWNER: "dar4datascience"
           GITHUB_REPO: "AWS-SAM-Cultura-CDMX"
-          GITHUB_SECRET_ARN: "arn:aws:secretsmanager:mx-central-1:829489762414:secret:github-scoped-token-zXl6yW"
-          
+          GITHUB_TOKEN_PARAMETER: !Ref GithubTokenParameterName
+
   GenerateSnapshotDateLambda:
     Type: AWS::Serverless::Function
     Properties:
@@ -213,7 +227,7 @@ Resources:
       RoleArn: !GetAtt CulturaStateMachineRole.Arn
       DefinitionString: !Sub |
         {
-          "Comment": "Scrape all pages in parallel using Lambda Map, then merge outputs with DuckDB",
+          "Comment": "Health-check the cartelera site, scrape all events over plain HTTP, then merge into Parquet with DuckDB",
           "TimeoutSeconds": 7200,
           "StartAt": "GenerateSnapshotDate",
           "States": {
@@ -221,84 +235,100 @@ Resources:
               "Type": "Task",
               "Resource": "${GenerateSnapshotDateLambda.Arn}",
               "ResultPath": "$.snapshot_date",
-              "Next": "GetPageNumbers"
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.error",
+                  "Next": "NotifyFailure"
+                }
+              ],
+              "Next": "CheckSiteHealth"
             },
-            "GetPageNumbers": {
+            "CheckSiteHealth": {
               "Type": "Task",
-              "Resource": "${CulturaPageCheck.Arn}",
+              "Resource": "${SiteHealthCheckFunction.Arn}",
+              "ResultPath": "$.health",
               "Retry": [
+                {
+                  "ErrorEquals": [
+                    "SiteUnavailable"
+                  ],
+                  "IntervalSeconds": 300,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2
+                },
                 {
                   "ErrorEquals": [
                     "Lambda.ServiceException",
                     "Lambda.AWSLambdaException",
                     "Lambda.SdkClientException",
-                    "States.Timeout"
+                    "Lambda.TooManyRequestsException"
                   ],
                   "IntervalSeconds": 2,
                   "MaxAttempts": 3,
                   "BackoffRate": 2
                 }
               ],
-              "ResultPath": "$.pages",
-              "Next": "ScrapePagesMap"
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "SiteUnavailable",
+                    "SiteChanged"
+                  ],
+                  "ResultPath": "$.error",
+                  "Next": "NotifySiteDown"
+                },
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.error",
+                  "Next": "NotifyFailure"
+                }
+              ],
+              "Next": "ScrapeEvents"
             },
-            "ScrapePagesMap": {
-              "Type": "Map",
-              "ItemsPath": "$.pages.body.page_numbers",
-              "MaxConcurrency": 5,
+            "ScrapeEvents": {
+              "Type": "Task",
+              "Resource": "${CarteleraScrapeFunction.Arn}",
               "Parameters": {
-                "page_number.$": "$$.Map.Item.Value",
                 "snapshot_date.$": "$.snapshot_date.snapshot_date"
               },
-              "Iterator": {
-                "StartAt": "ScrapeSinglePage",
-                "States": {
-                  "ScrapeSinglePage": {
-                    "Type": "Task",
-                    "Resource": "${PlaywrightCardScrapper.Arn}",
-                    "Retry": [
-                      {
-                        "ErrorEquals": [
-                          "Lambda.ServiceException",
-                          "Lambda.AWSLambdaException",
-                          "Lambda.SdkClientException",
-                          "States.Timeout"
-                        ],
-                        "IntervalSeconds": 3,
-                        "MaxAttempts": 3,
-                        "BackoffRate": 2
-                      }
-                    ],
-                    "Catch": [
-                      {
-                        "ErrorEquals": [
-                          "States.ALL"
-                        ],
-                        "ResultPath": "$.scrape_error",
-                        "Next": "MarkScrapeFailed"
-                      }
-                    ],
-                    "End": true
-                  },
-                  "MarkScrapeFailed": {
-                    "Type": "Pass",
-                    "Parameters": {
-                      "status": "failed",
-                      "page_number.$": "$.page_number",
-                      "snapshot_date.$": "$.snapshot_date",
-                      "error.$": "$.scrape_error"
-                    },
-                    "End": true
-                  }
+              "ResultPath": "$.scrape",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
                 }
-              },
-              "ResultPath": "$.scrape_results",
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.error",
+                  "Next": "NotifyFailure"
+                }
+              ],
               "Next": "DuckDBStep"
             },
             "DuckDBStep": {
               "Type": "Task",
               "Comment": "Merge JSONs into Parquet using DuckDB",
               "Resource": "${DuckDBFunction.Arn}",
+              "Parameters": {
+                "snapshot_date.$": "$.snapshot_date.snapshot_date"
+              },
+              "ResultPath": "$.publish",
               "Retry": [
                 {
                   "ErrorEquals": [
@@ -312,10 +342,44 @@ Resources:
                   "BackoffRate": 2
                 }
               ],
-              "Parameters": {
-                "snapshot_date.$": "$.snapshot_date"
-              },
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.error",
+                  "Next": "NotifyFailure"
+                }
+              ],
               "End": true
+            },
+            "NotifySiteDown": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "${AlertsTopic}",
+                "Subject": "Cultura CDMX: sitio cartelera no disponible - scraping detenido",
+                "Message.$": "States.Format('El sitio https://cartelera.cdmx.gob.mx no respondió correctamente (snapshot {}). Se detuvo el pipeline sin ejecutar el scraping. Error: {} | Detalle: {} | Ejecución: {}', $.snapshot_date.snapshot_date, $.error.Error, $.error.Cause, $$.Execution.Id)"
+              },
+              "Next": "SiteDown"
+            },
+            "SiteDown": {
+              "Type": "Fail",
+              "Error": "SiteDown"
+            },
+            "NotifyFailure": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "TopicArn": "${AlertsTopic}",
+                "Subject": "Cultura CDMX: falla en el pipeline de scraping",
+                "Message.$": "States.Format('El pipeline de scraping de la cartelera CDMX falló. Error: {} | Detalle: {} | Ejecución: {}', $.error.Error, $.error.Cause, $$.Execution.Id)"
+              },
+              "Next": "PipelineFailed"
+            },
+            "PipelineFailed": {
+              "Type": "Fail",
+              "Error": "PipelineFailed"
             }
           }
         }
@@ -342,10 +406,18 @@ Resources:
                 Action:
                   - lambda:InvokeFunction
                 Resource:
-                  - !GetAtt CulturaPageCheck.Arn
-                  - !GetAtt PlaywrightCardScrapper.Arn
+                  - !GetAtt SiteHealthCheckFunction.Arn
+                  - !GetAtt CarteleraScrapeFunction.Arn
                   - !GetAtt GenerateSnapshotDateLambda.Arn
-                  - !GetAtt DuckDBFunction.Arn 
+                  - !GetAtt DuckDBFunction.Arn
+        - PolicyName: SnsPublish
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref AlertsTopic
 
 
   # --------------------------
